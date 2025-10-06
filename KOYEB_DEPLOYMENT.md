@@ -16,6 +16,14 @@ Esta guía te ayudará a desplegar tu Sistema de Gestión de Notas en Koyeb.
    - `frontend/Dockerfile`
    - `docker-compose.yml`
    - `.dockerignore` files
+   - `.koyeb.yaml` (configuración de Koyeb)
+
+### ⚠️ **IMPORTANTE**: Configuración Docker Explícita
+
+Para evitar errores de detección automática, **SIEMPRE** selecciona:
+- **Build Method**: `Dockerfile` (NO "Auto-detect")
+- **Dockerfile Path**: Especifica la ruta correcta
+- **Build Context**: `/` (raíz del repositorio)
 
 ## Paso 2: Desplegar el Backend (FastAPI)
 
@@ -25,11 +33,12 @@ Esta guía te ayudará a desplegar tu Sistema de Gestión de Notas en Koyeb.
 2. Haz clic en "Create Service"
 3. Selecciona "GitHub" o "GitLab" como fuente
 4. Conecta tu repositorio
-5. Configura el servicio:
-   - **Name**: `sistema-notas-backend`
-   - **Build Command**: (dejar vacío)
-   - **Run Command**: (dejar vacío)
+5. **IMPORTANTE**: En la sección "Build & Deploy", selecciona:
+   - **Build Method**: `Dockerfile`
    - **Dockerfile Path**: `backend/Dockerfile`
+   - **Build Context**: `/` (raíz del repositorio)
+6. Configura el servicio:
+   - **Name**: `sistema-notas-backend`
    - **Port**: `8000`
 
 ### 2.2 Variables de Entorno del Backend
@@ -52,11 +61,12 @@ FRONTEND_URL=https://tu-frontend-url.koyeb.app
 ### 3.1 Crear Servicio Frontend
 
 1. Crea otro servicio en Koyeb
-2. Configura el servicio:
-   - **Name**: `sistema-notas-frontend`
-   - **Build Command**: (dejar vacío)
-   - **Run Command**: (dejar vacío)
+2. **IMPORTANTE**: En la sección "Build & Deploy", selecciona:
+   - **Build Method**: `Dockerfile`
    - **Dockerfile Path**: `frontend/Dockerfile`
+   - **Build Context**: `/` (raíz del repositorio)
+3. Configura el servicio:
+   - **Name**: `sistema-notas-frontend`
    - **Port**: `80`
 
 ### 3.2 Variables de Entorno del Frontend
@@ -82,7 +92,7 @@ REACT_APP_API_URL=https://tu-backend-url.koyeb.app
 
 ### 4.2 Actualizar Frontend
 
-1. Ve al servicio del frontend en Koyeb
+1. Ve al servicio del frontend en koyeb pu
 2. Actualiza la variable de entorno `REACT_APP_API_URL` con la URL real del backend
 3. Reinicia el servicio
 
@@ -174,6 +184,14 @@ docker-compose exec backend python migrate_data.py
 - Para PostgreSQL, asegúrate de que el servicio esté funcionando
 - Verifica que las credenciales de la base de datos sean correctas
 - Revisa los logs del servicio PostgreSQL en Koyeb
+
+### Error de Build (No buildpack groups passed detection)
+- **SOLUCIÓN**: Selecciona explícitamente `Dockerfile` como Build Method
+- NO uses "Auto-detect" - especifica manualmente:
+  - Build Method: `Dockerfile`
+  - Dockerfile Path: `backend/Dockerfile` o `frontend/Dockerfile`
+  - Build Context: `/` (raíz del repositorio)
+- Asegúrate de que los archivos Dockerfile estén en las rutas correctas
 
 ## Costos
 
