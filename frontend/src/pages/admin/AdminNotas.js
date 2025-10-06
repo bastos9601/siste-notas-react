@@ -1,0 +1,487 @@
+import React, { useState, useEffect } from 'react';
+import { adminService } from '../../services/adminService';
+import { BookOpen, User, GraduationCap, Calendar, Search, Eye } from 'lucide-react';
+
+const AdminNotas = () => {
+  const [notas, setNotas] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedCiclo, setSelectedCiclo] = useState(null);
+
+  useEffect(() => {
+    loadNotas();
+  }, []);
+
+  const loadNotas = async () => {
+    try {
+      setLoading(true);
+      const data = await adminService.getNotas();
+      setNotas(data);
+    } catch (error) {
+      console.error('Error al cargar notas:', error);
+      alert('Error al cargar las notas');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const filteredNotas = notas.filter(nota => {
+    const matchesSearch = nota.alumno_nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         nota.asignatura_nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         nota.docente_nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         nota.alumno_dni.includes(searchTerm) ||
+                         nota.alumno_ciclo.toLowerCase().includes(searchTerm.toLowerCase());
+
+    const matchesCiclo = selectedCiclo ? nota.alumno_ciclo === selectedCiclo : true;
+
+    return matchesSearch && matchesCiclo;
+  });
+
+  const getCalificacionColor = (calificacion) => {
+    if (calificacion >= 18) return 'text-green-600 bg-green-50';
+    if (calificacion >= 14) return 'text-blue-600 bg-blue-50';
+    if (calificacion >= 11) return 'text-yellow-600 bg-yellow-50';
+    return 'text-red-600 bg-red-50';
+  };
+
+  const getCalificacionText = (calificacion) => {
+    if (calificacion >= 18) return 'Excelente';
+    if (calificacion >= 14) return 'Bueno';
+    if (calificacion >= 11) return 'Regular';
+    return 'Deficiente';
+  };
+
+  const formatDate = (dateString) => {
+    return new Date(dateString).toLocaleDateString('es-ES', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
+  // Obtener ciclos únicos con contadores de notas
+  const ciclosConContadores = notas.reduce((acc, nota) => {
+    const ciclo = nota.alumno_ciclo;
+    if (ciclo) {
+      if (!acc[ciclo]) {
+        acc[ciclo] = 0;
+      }
+      acc[ciclo]++;
+    }
+    return acc;
+  }, {});
+
+  const ciclos = Object.keys(ciclosConContadores).sort();
+
+  // Función para agrupar notas por alumno y asignatura
+  const getNotasAgrupadas = () => {
+    const agrupadas = {};
+    const notasIndividuales = [];
+
+    filteredNotas.forEach(nota => {
+      const key = `${nota.alumno_id}-${nota.asignatura_id}`;
+      
+      if (!agrupadas[key]) {
+        agrupadas[key] = {
+          alumno_id: nota.alumno_id,
+          alumno_nombre: nota.alumno_nombre,
+          alumno_dni: nota.alumno_dni,
+          alumno_ciclo: nota.alumno_ciclo,
+          asignatura_id: nota.asignatura_id,
+          asignatura_nombre: nota.asignatura_nombre,
+          docente_nombre: nota.docente_nombre,
+          notas: []
+        };
+      }
+      
+      agrupadas[key].notas.push(nota);
+    });
+
+    // Separar en agrupadas (más de 1 nota) e individuales
+    Object.values(agrupadas).forEach(grupo => {
+      if (grupo.notas.length > 1) {
+        // Calcular estadísticas del grupo
+        const calificaciones = grupo.notas.map(n => n.calificacion);
+        const promedio = calificaciones.reduce((sum, cal) => sum + cal, 0) / calificaciones.length;
+        const notaMaxima = Math.max(...calificaciones);
+        const notaMinima = Math.min(...calificaciones);
+        const fechaMasReciente = new Date(Math.max(...grupo.notas.map(n => new Date(n.fecha_registro))));
+        
+        grupo.estadisticas = {
+          promedio: promedio.toFixed(1),
+          notaMaxima,
+          notaMinima,
+          totalNotas: grupo.notas.length,
+          fechaMasReciente: fechaMasReciente.toISOString()
+        };
+        
+        notasIndividuales.push(grupo);
+      } else {
+        // Nota individual
+        notasIndividuales.push(grupo.notas[0]);
+      }
+    });
+
+    return notasIndividuales;
+  };
+
+  const notasParaMostrar = getNotasAgrupadas();
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-gray-500">Cargando notas...</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex justify-between items-center">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Gestión de Notas</h1>
+          <p className="text-gray-600">Visualiza todas las notas del sistema</p>
+        </div>
+        <div className="flex items-center space-x-2 text-sm text-gray-500">
+          <BookOpen className="h-4 w-4" />
+          <span>{notas.length} notas registradas</span>
+        </div>
+      </div>
+
+      {/* Mostrar tarjetas de ciclos si no hay ciclo seleccionado */}
+      {!selectedCiclo ? (
+        ciclos.length > 0 ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {ciclos.map((ciclo) => (
+            <div key={ciclo} className="bg-white p-6 rounded-lg border border-gray-200 hover:shadow-md transition-shadow">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center">
+                  <div className="flex-shrink-0 h-12 w-12 bg-blue-100 rounded-lg flex items-center justify-center">
+                    <Calendar className="h-6 w-6 text-blue-600" />
+                  </div>
+                  <div className="ml-4">
+                    <h3 className="text-lg font-semibold text-gray-900">Ciclo {ciclo}</h3>
+                    <p className="text-sm text-gray-500">
+                      {ciclosConContadores[ciclo]} {ciclosConContadores[ciclo] === 1 ? 'nota' : 'notas'}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setSelectedCiclo(ciclo)}
+                  className="flex items-center text-blue-600 hover:text-blue-800 transition-colors"
+                >
+                  <Eye className="h-4 w-4 mr-1" />
+                  Mostrar
+                </button>
+              </div>
+            </div>
+          ))}
+          </div>
+        ) : (
+          <div className="bg-white p-12 rounded-lg border border-gray-200 text-center">
+            <BookOpen className="mx-auto h-12 w-12 text-gray-400" />
+            <h3 className="mt-2 text-sm font-medium text-gray-900">No hay notas registradas</h3>
+            <p className="mt-1 text-sm text-gray-500">
+              No se han registrado notas en el sistema aún.
+            </p>
+          </div>
+        )
+      ) : (
+        <>
+          {/* Filtro activo */}
+          <div className="flex items-center justify-between bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <div className="flex items-center">
+              <Calendar className="h-5 w-5 text-blue-600 mr-2" />
+              <span className="text-blue-800 font-medium">
+                Mostrando notas del Ciclo {selectedCiclo}
+              </span>
+            </div>
+            <button
+              onClick={() => {
+                setSelectedCiclo(null);
+                setSearchTerm('');
+              }}
+              className="text-blue-600 hover:text-blue-800 transition-colors"
+            >
+              Ver todos los ciclos
+            </button>
+          </div>
+
+          {/* Search */}
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+            <input
+              type="text"
+              placeholder="Buscar por alumno, asignatura, docente, DNI..."
+              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+          </div>
+        </>
+      )}
+
+      {/* Stats Cards y Tabla - solo mostrar cuando hay ciclo seleccionado */}
+      {selectedCiclo && (
+        <>
+          {/* Stats Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+        <div className="bg-white p-4 rounded-lg border border-gray-200">
+          <div className="flex items-center">
+            <div className="p-2 bg-blue-100 rounded-lg">
+              <BookOpen className="h-5 w-5 text-blue-600" />
+            </div>
+            <div className="ml-3">
+              <p className="text-sm font-medium text-gray-600">Total Notas</p>
+              <p className="text-2xl font-bold text-gray-900">{notas.length}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white p-4 rounded-lg border border-gray-200">
+          <div className="flex items-center">
+            <div className="p-2 bg-green-100 rounded-lg">
+              <User className="h-5 w-5 text-green-600" />
+            </div>
+            <div className="ml-3">
+              <p className="text-sm font-medium text-gray-600">Alumnos con Notas</p>
+              <p className="text-2xl font-bold text-gray-900">
+                {new Set(notas.map(n => n.alumno_id)).size}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white p-4 rounded-lg border border-gray-200">
+          <div className="flex items-center">
+            <div className="p-2 bg-purple-100 rounded-lg">
+              <GraduationCap className="h-5 w-5 text-purple-600" />
+            </div>
+            <div className="ml-3">
+              <p className="text-sm font-medium text-gray-600">Asignaturas</p>
+              <p className="text-2xl font-bold text-gray-900">
+                {new Set(notas.map(n => n.asignatura_id)).size}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white p-4 rounded-lg border border-gray-200">
+          <div className="flex items-center">
+            <div className="p-2 bg-orange-100 rounded-lg">
+              <Calendar className="h-5 w-5 text-orange-600" />
+            </div>
+            <div className="ml-3">
+              <p className="text-sm font-medium text-gray-600">Promedio General</p>
+              <p className="text-2xl font-bold text-gray-900">
+                {notas.length > 0 
+                  ? (notas.reduce((sum, n) => sum + n.calificacion, 0) / notas.length).toFixed(1)
+                  : '0.0'
+                }
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white p-4 rounded-lg border border-gray-200">
+          <div className="flex items-center">
+            <div className="p-2 bg-indigo-100 rounded-lg">
+              <GraduationCap className="h-5 w-5 text-indigo-600" />
+            </div>
+            <div className="ml-3">
+              <p className="text-sm font-medium text-gray-600">Ciclos</p>
+              <p className="text-2xl font-bold text-gray-900">
+                {new Set(notas.map(n => n.alumno_ciclo)).size}
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Notas Table */}
+      <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Alumno
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Ciclo
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Asignatura
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Docente
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Calificación
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Fecha
+                </th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {notasParaMostrar.length === 0 ? (
+                <tr>
+                  <td colSpan="6" className="px-6 py-12 text-center text-gray-500">
+                    {searchTerm ? 'No se encontraron notas que coincidan con la búsqueda' : 'No hay notas registradas'}
+                  </td>
+                </tr>
+              ) : (
+                notasParaMostrar.map((item, index) => {
+                  // Si es un grupo (tiene la propiedad 'notas')
+                  if (item.notas) {
+                    return (
+                      <tr key={`grupo-${item.alumno_id}-${item.asignatura_id}`} className="hover:bg-gray-50 bg-blue-50">
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div>
+                            <div className="text-sm font-medium text-gray-900">
+                              {item.alumno_nombre}
+                            </div>
+                            <div className="text-sm text-gray-500">
+                              DNI: {item.alumno_dni}
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800">
+                            {item.alumno_ciclo}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="text-sm text-gray-900">
+                            {item.asignatura_nombre}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="text-sm text-gray-900">
+                            {item.docente_nombre}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="space-y-1">
+                            <div className="flex items-center space-x-2">
+                              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getCalificacionColor(item.estadisticas.promedio)}`}>
+                                Promedio: {item.estadisticas.promedio}
+                              </span>
+                            </div>
+                            <div className="text-xs text-gray-500">
+                              {item.estadisticas.totalNotas} notas • Max: {item.estadisticas.notaMaxima} • Min: {item.estadisticas.notaMinima}
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="text-sm text-gray-500">
+                            {formatDate(item.estadisticas.fechaMasReciente)}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  } else {
+                    // Nota individual
+                    return (
+                      <tr key={item.id} className="hover:bg-gray-50">
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div>
+                            <div className="text-sm font-medium text-gray-900">
+                              {item.alumno_nombre}
+                            </div>
+                            <div className="text-sm text-gray-500">
+                              DNI: {item.alumno_dni}
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800">
+                            {item.alumno_ciclo}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="text-sm text-gray-900">
+                            {item.asignatura_nombre}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="text-sm text-gray-900">
+                            {item.docente_nombre}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="flex items-center space-x-2">
+                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getCalificacionColor(item.calificacion)}`}>
+                              {item.calificacion} {getCalificacionText(item.calificacion)}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="text-sm text-gray-500">
+                            {formatDate(item.fecha_registro)}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  }
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Summary by Student */}
+      {notas.length > 0 && (
+        <div className="bg-white rounded-lg border border-gray-200 p-6">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">Resumen por Alumno</h3>
+          <div className="space-y-3">
+            {Object.entries(
+              filteredNotas.reduce((acc, nota) => {
+                if (!acc[nota.alumno_id]) {
+                  acc[nota.alumno_id] = {
+                    nombre: nota.alumno_nombre,
+                    dni: nota.alumno_dni,
+                    ciclo: nota.alumno_ciclo,
+                    notas: []
+                  };
+                }
+                acc[nota.alumno_id].notas.push(nota.calificacion);
+                return acc;
+              }, {})
+            ).map(([alumnoId, data]) => {
+              const promedio = data.notas.reduce((sum, nota) => sum + nota, 0) / data.notas.length;
+              return (
+                <div key={alumnoId} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                  <div>
+                    <div className="font-medium text-gray-900">{data.nombre}</div>
+                    <div className="text-sm text-gray-500">DNI: {data.dni}</div>
+                    <div className="text-sm text-gray-500">
+                      Ciclo: <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-indigo-100 text-indigo-800">
+                        {data.ciclo}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-sm text-gray-500">{data.notas.length} notas</div>
+                    <div className={`font-semibold ${getCalificacionColor(promedio)}`}>
+                      Promedio: {promedio.toFixed(1)}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+        </>
+      )}
+    </div>
+  );
+};
+
+export default AdminNotas;
