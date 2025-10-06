@@ -13,21 +13,14 @@ app = FastAPI(
 )
 
 # Configurar CORS
-import os
-allowed_origins = [
-    "http://localhost:3000",  # React dev server (puerto original)
-    "http://localhost:3001",  # React dev server (nuevo puerto)
-    "http://127.0.0.1:3000",  # Alternativa localhost
-    "http://127.0.0.1:3001",  # Alternativa localhost
-]
-
-# Agregar dominios de producción si están definidos
-if os.getenv("FRONTEND_URL"):
-    allowed_origins.append(os.getenv("FRONTEND_URL"))
-
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=allowed_origins,
+    allow_origins=[
+        "http://localhost:3000",  # React dev server (puerto original)
+        "http://localhost:3001",  # React dev server (nuevo puerto)
+        "http://127.0.0.1:3000",  # Alternativa localhost
+        "http://127.0.0.1:3001",  # Alternativa localhost
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
