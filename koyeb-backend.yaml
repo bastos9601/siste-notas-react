@@ -1,0 +1,34 @@
+# Configuración específica para el servicio Backend en Koyeb
+# Usar este archivo si prefieres configurar cada servicio por separado
+
+name: sistema-notas-backend
+type: web
+
+build:
+  type: dockerfile
+  dockerfile_path: backend/Dockerfile
+  build_context: /
+
+env:
+  - name: SECRET_KEY
+    value: "tu-clave-secreta-muy-segura-para-produccion"
+  - name: DATABASE_URL
+    value: "postgresql://postgres:password@postgres-service:5432/sistema_notas"
+  - name: FRONTEND_URL
+    value: "https://tu-frontend-url.koyeb.app"
+
+ports:
+  - port: 8000
+    http:
+      paths:
+        - path: /
+          port: 8000
+
+healthcheck:
+  http:
+    path: /
+    port: 8000
+  initial_delay: 30s
+  interval: 10s
+  timeout: 5s
+  retries: 3
