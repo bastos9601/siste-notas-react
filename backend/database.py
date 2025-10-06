@@ -9,15 +9,10 @@ load_dotenv()
 # Configuración de la base de datos
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./sistema_notas.db")
 
-# Configuración específica para SQLite vs PostgreSQL
-if "sqlite" in DATABASE_URL:
-    engine = create_engine(
-        DATABASE_URL,
-        connect_args={"check_same_thread": False}
-    )
-else:
-    # Para PostgreSQL y otras bases de datos
-    engine = create_engine(DATABASE_URL)
+engine = create_engine(
+    DATABASE_URL,
+    connect_args={"check_same_thread": False} if "sqlite" in DATABASE_URL else {}
+)
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
