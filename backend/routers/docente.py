@@ -538,6 +538,142 @@ async def despublicar_nota(
         }
     }
 
+@router.post("/asignaturas/{asignatura_id}/alumnos/{alumno_id}/enviar-notas")
+async def enviar_todas_las_notas(
+    asignatura_id: int,
+    alumno_id: int,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_role("docente"))
+):
+    """Enviar todas las notas de un alumno en una asignatura específica por email"""
+    
+    # Verificar que el docente tiene acceso a esta asignatura
+    docente = db.query(Docente).filter(Docente.usuario_id == current_user.id).first()
+    if not docente:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Docente no encontrado"
+        )
+    
+    # Verificar que la asignatura pertenece al docente
+    asignatura = db.query(Asignatura).filter(
+        Asignatura.id == asignatura_id,
+        Asignatura.docente_id == docente.id
+    ).first()
+    
+    if not asignatura:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Asignatura no encontrada o no tienes acceso a ella"
+        )
+    
+    # Verificar que el alumno está matriculado en la asignatura
+    matricula = db.execute(
+        matriculas.select().where(
+            matriculas.c.alumno_id == alumno_id,
+            matriculas.c.asignatura_id == asignatura_id
+        )
+    ).first()
+    
+    if not matricula:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="El alumno no está matriculado en esta asignatura"
+        )
+    
+    # Obtener información del alumno
+    alumno = db.query(Alumno).filter(Alumno.id == alumno_id).first()
+    if not alumno:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Alumno no encontrado"
+        )
+    
+    # Obtener todas las notas del alumno en esta asignatura
+    notas = db.query(Nota).filter(
+        Nota.alumno_id == alumno_id,
+        Nota.asignatura_id == asignatura_id
+    ).all()
+    
+    if not notas:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="El alumno no tiene notas registradas en esta asignatura"
+        )
+    
+    # Preparar datos de las notas para el email
+    notas_data = []
+    for nota in notas:
+        notas_data.append({
+            'calificacion': nota.calificacion,
+            'tipo_nota': nota.tipo_nota.replace('_', ' ').title() if nota.tipo_nota else 'Examen Final',
+            'fecha': nota.fecha_registro.strftime("%d/%m/%Y")
+        })
+    
+    # Intentar enviar email con todas las notas
+    try:
+        from email_config import send_all_grades_email
+        email_result = await send_all_grades_email(
+            email=alumno.usuario.email,
+            nombre_alumno=alumno.nombre_completo,
+            notas_data=notas_data,
+            asignatura_nombre=asignatura.nombre
+        )
+        
+        if email_result["success"]:
+            return {
+                "message": "Reporte de notas enviado exitosamente por email",
+                "alumno": {
+                    "id": alumno.id,
+                    "nombre": alumno.nombre_completo,
+                    "email": alumno.usuario.email
+                },
+                "asignatura": {
+                    "id": asignatura.id,
+                    "nombre": asignatura.nombre
+                },
+                "notas_enviadas": len(notas_data),
+                "promedio": sum(nota['calificacion'] for nota in notas_data) / len(notas_data),
+                "email_sent": True,
+                "email_message": email_result["message"]
+            }
+        else:
+            return {
+                "message": "Error al enviar el reporte de notas por email",
+                "alumno": {
+                    "id": alumno.id,
+                    "nombre": alumno.nombre_completo,
+                    "email": alumno.usuario.email
+                },
+                "asignatura": {
+                    "id": asignatura.id,
+                    "nombre": asignatura.nombre
+                },
+                "notas_enviadas": len(notas_data),
+                "promedio": sum(nota['calificacion'] for nota in notas_data) / len(notas_data),
+                "email_sent": False,
+                "email_error": email_result["message"],
+                "instructions": "Verifica la configuración de email en el sistema."
+            }
+    except Exception as e:
+        return {
+            "message": "Error al enviar el reporte de notas por email",
+            "alumno": {
+                "id": alumno.id,
+                "nombre": alumno.nombre_completo,
+                "email": alumno.usuario.email
+            },
+            "asignatura": {
+                "id": asignatura.id,
+                "nombre": asignatura.nombre
+            },
+            "notas_enviadas": len(notas_data),
+            "promedio": sum(nota['calificacion'] for nota in notas_data) / len(notas_data),
+            "email_sent": False,
+            "email_error": f"Error en el servicio de email: {str(e)}",
+            "instructions": "Verifica la configuración de email en el sistema."
+        }
+
 @router.put("/mi-perfil")
 async def actualizar_mi_perfil(
     perfil_data: dict,

@@ -50,6 +50,12 @@ export const docenteService = {
     return response.data;
   },
 
+  // Enviar todas las notas de un alumno
+  async enviarTodasLasNotas(asignaturaId, alumnoId) {
+    const response = await api.post(`/docente/asignaturas/${asignaturaId}/alumnos/${alumnoId}/enviar-notas`);
+    return response.data;
+  },
+
   // Mi Perfil
   async actualizarMiPerfil(perfilData) {
     const response = await api.put('/docente/mi-perfil', perfilData);

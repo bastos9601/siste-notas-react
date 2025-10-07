@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Plus, Edit, Trash2, Search, BookOpen, ArrowLeft, Send, EyeOff, Calendar } from 'lucide-react';
+import { Plus, Edit, Trash2, Search, BookOpen, ArrowLeft, Send, EyeOff, Calendar, Mail } from 'lucide-react';
 import { docenteService } from '../../services/docenteService';
 
 const DocenteNotas = () => {
@@ -179,6 +179,48 @@ La nota ha sido despublicada exitosamente.
     }
   };
 
+  const handleEnviarTodasLasNotas = async (alumnoId, alumnoNombre) => {
+    if (window.confirm(`¿Enviar todas las notas de ${alumnoNombre} por email?`)) {
+      try {
+        const response = await docenteService.enviarTodasLasNotas(selectedAsignatura, alumnoId);
+        
+        if (response.email_sent) {
+          const successMessage = `
+✅ ${response.message}
+
+Alumno: ${response.alumno.nombre}
+Email: ${response.alumno.email}
+Asignatura: ${response.asignatura.nombre}
+Notas enviadas: ${response.notas_enviadas}
+Promedio: ${response.promedio.toFixed(1)}
+
+El reporte de notas ha sido enviado exitosamente por email.
+          `;
+          alert(successMessage);
+        } else {
+          const errorMessage = `
+⚠️ ${response.message}
+
+Alumno: ${response.alumno.nombre}
+Email: ${response.alumno.email}
+Asignatura: ${response.asignatura.nombre}
+Notas a enviar: ${response.notas_enviadas}
+Promedio: ${response.promedio.toFixed(1)}
+
+Error del email: ${response.email_error}
+
+${response.instructions}
+          `;
+          alert(errorMessage);
+        }
+      } catch (error) {
+        console.error('Error al enviar notas:', error);
+        const errorMessage = error.response?.data?.detail || 'Error al enviar las notas. Inténtalo de nuevo.';
+        alert(`❌ Error: ${errorMessage}`);
+      }
+    }
+  };
+
   const resetForm = () => {
     setFormData({
       alumno_id: '',
@@ -344,115 +386,135 @@ La nota ha sido despublicada exitosamente.
                     return (
                       <React.Fragment key={alumno.id}>
                         {notasAlumno.length > 0 ? (
-                          notasAlumno.map((nota, index) => (
-                            <tr key={`${alumno.id}-${nota.id}`} className="hover:bg-gray-50">
-                              {index === 0 && (
-                                <>
-                                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900" rowSpan={notasAlumno.length}>
-                                    {alumno.nombre_completo}
-                                  </td>
-                                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500" rowSpan={notasAlumno.length}>
-                                    {alumno.dni}
-                                  </td>
-                                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500" rowSpan={notasAlumno.length}>
-                                    {alumno.ciclo}
-                                  </td>
-                                </>
-                              )}
-                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                                  nota.calificacion >= 13 ? 'bg-green-100 text-green-800' :
-                                  nota.calificacion >= 10 ? 'bg-yellow-100 text-yellow-800' :
-                                  'bg-red-100 text-red-800'
-                                }`}>
-                                  {nota.calificacion}
-                                </span>
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                                  nota.tipo_nota === 'examen_final' ? 'bg-red-100 text-red-800' :
-                                  nota.tipo_nota === 'examen_parcial' ? 'bg-orange-100 text-orange-800' :
-                                  nota.tipo_nota === 'practica' ? 'bg-blue-100 text-blue-800' :
-                                  nota.tipo_nota === 'participacion' ? 'bg-green-100 text-green-800' :
-                                  nota.tipo_nota === 'trabajo_grupal' ? 'bg-purple-100 text-purple-800' :
-                                  nota.tipo_nota === 'proyecto' ? 'bg-indigo-100 text-indigo-800' :
-                                  nota.tipo_nota === 'laboratorio' ? 'bg-cyan-100 text-cyan-800' :
-                                  nota.tipo_nota === 'tarea' ? 'bg-yellow-100 text-yellow-800' :
-                                  nota.tipo_nota === 'quiz' ? 'bg-pink-100 text-pink-800' :
-                                  'bg-gray-100 text-gray-800'
-                                }`}>
-                                  {nota.tipo_nota === 'examen_final' ? 'Examen Final' :
-                                   nota.tipo_nota === 'examen_parcial' ? 'Examen Parcial' :
-                                   nota.tipo_nota === 'practica' ? 'Práctica' :
-                                   nota.tipo_nota === 'participacion' ? 'Participación' :
-                                   nota.tipo_nota === 'trabajo_grupal' ? 'Trabajo Grupal' :
-                                   nota.tipo_nota === 'proyecto' ? 'Proyecto' :
-                                   nota.tipo_nota === 'laboratorio' ? 'Laboratorio' :
-                                   nota.tipo_nota === 'tarea' ? 'Tarea' :
-                                   nota.tipo_nota === 'quiz' ? 'Quiz' :
-                                   nota.tipo_nota === 'exposicion' ? 'Exposición' :
-                                   nota.tipo_nota || 'Examen Final'}
-                                </span>
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                {new Date(nota.fecha_registro).toLocaleDateString()}
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                                {nota.publicada ? (
-                                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                                    Publicada
-                                  </span>
-                                ) : (
-                                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
-                                    Borrador
-                                  </span>
+                          <>
+                            {notasAlumno.map((nota, index) => (
+                              <tr key={`${alumno.id}-${nota.id}`} className="hover:bg-gray-50">
+                                {index === 0 && (
+                                  <>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900" rowSpan={notasAlumno.length + 1}>
+                                      {alumno.nombre_completo}
+                                    </td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500" rowSpan={notasAlumno.length + 1}>
+                                      {alumno.dni}
+                                    </td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500" rowSpan={notasAlumno.length + 1}>
+                                      {alumno.ciclo}
+                                    </td>
+                                  </>
                                 )}
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                                    nota.calificacion >= 13 ? 'bg-green-100 text-green-800' :
+                                    nota.calificacion >= 10 ? 'bg-yellow-100 text-yellow-800' :
+                                    'bg-red-100 text-red-800'
+                                  }`}>
+                                    {nota.calificacion}
+                                  </span>
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                                    nota.tipo_nota === 'examen_final' ? 'bg-red-100 text-red-800' :
+                                    nota.tipo_nota === 'examen_parcial' ? 'bg-orange-100 text-orange-800' :
+                                    nota.tipo_nota === 'practica' ? 'bg-blue-100 text-blue-800' :
+                                    nota.tipo_nota === 'participacion' ? 'bg-green-100 text-green-800' :
+                                    nota.tipo_nota === 'trabajo_grupal' ? 'bg-purple-100 text-purple-800' :
+                                    nota.tipo_nota === 'proyecto' ? 'bg-indigo-100 text-indigo-800' :
+                                    nota.tipo_nota === 'laboratorio' ? 'bg-cyan-100 text-cyan-800' :
+                                    nota.tipo_nota === 'tarea' ? 'bg-yellow-100 text-yellow-800' :
+                                    nota.tipo_nota === 'quiz' ? 'bg-pink-100 text-pink-800' :
+                                    'bg-gray-100 text-gray-800'
+                                  }`}>
+                                    {nota.tipo_nota === 'examen_final' ? 'Examen Final' :
+                                     nota.tipo_nota === 'examen_parcial' ? 'Examen Parcial' :
+                                     nota.tipo_nota === 'practica' ? 'Práctica' :
+                                     nota.tipo_nota === 'participacion' ? 'Participación' :
+                                     nota.tipo_nota === 'trabajo_grupal' ? 'Trabajo Grupal' :
+                                     nota.tipo_nota === 'proyecto' ? 'Proyecto' :
+                                     nota.tipo_nota === 'laboratorio' ? 'Laboratorio' :
+                                     nota.tipo_nota === 'tarea' ? 'Tarea' :
+                                     nota.tipo_nota === 'quiz' ? 'Quiz' :
+                                     nota.tipo_nota === 'exposicion' ? 'Exposición' :
+                                     nota.tipo_nota || 'Examen Final'}
+                                  </span>
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                  {new Date(nota.fecha_registro).toLocaleDateString()}
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                                  {nota.publicada ? (
+                                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                      Publicada
+                                    </span>
+                                  ) : (
+                                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                                      Borrador
+                                    </span>
+                                  )}
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                                  <div className="flex space-x-2">
+                                    <button
+                                      onClick={() => {
+                                        setEditingNota(nota);
+                                        setFormData({
+                                          alumno_id: nota.alumno_id,
+                                          asignatura_id: nota.asignatura_id,
+                                          calificacion: nota.calificacion.toString(),
+                                          tipo_evaluacion: nota.tipo_nota || 'examen_final'
+                                        });
+                                        setShowModal(true);
+                                      }}
+                                      className="text-primary-600 hover:text-primary-900"
+                                      title="Editar nota"
+                                    >
+                                      <Edit className="h-4 w-4" />
+                                    </button>
+                                    {!nota.publicada && (
+                                      <button
+                                        onClick={() => handlePublicar(nota.id, alumno.nombre_completo)}
+                                        className="text-green-600 hover:text-green-900"
+                                        title="Publicar nota"
+                                      >
+                                        <Send className="h-4 w-4" />
+                                      </button>
+                                    )}
+                                    {nota.publicada && (
+                                      <button
+                                        onClick={() => handleDespublicar(nota.id, alumno.nombre_completo)}
+                                        className="text-orange-600 hover:text-orange-900"
+                                        title="Despublicar nota"
+                                      >
+                                        <EyeOff className="h-4 w-4" />
+                                      </button>
+                                    )}
+                                    <button
+                                      onClick={() => handleDelete(nota.id)}
+                                      className="text-red-600 hover:text-red-900"
+                                      title="Eliminar nota"
+                                    >
+                                      <Trash2 className="h-4 w-4" />
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            ))}
+                            {/* Fila adicional con botón de envío de todas las notas */}
+                            <tr className="bg-blue-50 hover:bg-blue-100">
+                              <td className="px-6 py-3 text-sm font-medium text-blue-800" colSpan="5">
+                                📧 Enviar todas las notas por email
                               </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                                <div className="flex space-x-2">
-                                  <button
-                                    onClick={() => {
-                                      setEditingNota(nota);
-                                      setFormData({
-                                        alumno_id: nota.alumno_id,
-                                        asignatura_id: nota.asignatura_id,
-                                        calificacion: nota.calificacion.toString(),
-                                        tipo_evaluacion: nota.tipo_nota || 'examen_final'
-                                      });
-                                      setShowModal(true);
-                                    }}
-                                    className="text-primary-600 hover:text-primary-900"
-                                  >
-                                    <Edit className="h-4 w-4" />
-                                  </button>
-                                  {!nota.publicada && (
-                                    <button
-                                      onClick={() => handlePublicar(nota.id, alumno.nombre_completo)}
-                                      className="text-green-600 hover:text-green-900"
-                                      title="Publicar nota"
-                                    >
-                                      <Send className="h-4 w-4" />
-                                    </button>
-                                  )}
-                                  {nota.publicada && (
-                                    <button
-                                      onClick={() => handleDespublicar(nota.id, alumno.nombre_completo)}
-                                      className="text-orange-600 hover:text-orange-900"
-                                      title="Despublicar nota"
-                                    >
-                                      <EyeOff className="h-4 w-4" />
-                                    </button>
-                                  )}
-                                  <button
-                                    onClick={() => handleDelete(nota.id)}
-                                    className="text-red-600 hover:text-red-900"
-                                  >
-                                    <Trash2 className="h-4 w-4" />
-                                  </button>
-                                </div>
+                              <td className="px-6 py-3 text-sm font-medium">
+                                <button
+                                  onClick={() => handleEnviarTodasLasNotas(alumno.id, alumno.nombre_completo)}
+                                  className="flex items-center space-x-2 bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded-md text-xs font-medium transition-colors"
+                                  title="Enviar todas las notas por email"
+                                >
+                                  <Mail className="h-3 w-3" />
+                                  <span>Enviar Email</span>
+                                </button>
                               </td>
                             </tr>
-                          ))
+                          </>
                         ) : (
                           <tr className="hover:bg-gray-50">
                             <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">

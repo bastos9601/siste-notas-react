@@ -488,3 +488,216 @@ async def send_password_recovery_email(email: str, nombre: str, temp_password: s
         return {"success": True, "message": f"Email de recuperación enviado exitosamente a {email}"}
     except Exception as e:
         return {"success": False, "message": f"Error al enviar email de recuperación: {str(e)}"}
+
+async def send_all_grades_email(email: str, nombre_alumno: str, notas_data: list, asignatura_nombre: str):
+    """Enviar email con todas las notas de un alumno en una asignatura específica"""
+    
+    # Calcular promedio
+    if notas_data:
+        promedio = sum(nota['calificacion'] for nota in notas_data) / len(notas_data)
+    else:
+        promedio = 0
+    
+    # Determinar estado general
+    if promedio >= 13:
+        estado_general = "Aprobado"
+        color_estado = "#059669"
+        bg_estado = "#ecfdf5"
+    elif promedio >= 10:
+        estado_general = "Recuperación"
+        color_estado = "#d97706"
+        bg_estado = "#fef3c7"
+    else:
+        estado_general = "Desaprobado"
+        color_estado = "#dc2626"
+        bg_estado = "#fef2f2"
+    
+    # Generar tabla de notas
+    notas_html = ""
+    for nota in notas_data:
+        nota_estado = "Aprobado" if nota['calificacion'] >= 13 else "Recuperación" if nota['calificacion'] >= 10 else "Desaprobado"
+        nota_color = "#059669" if nota['calificacion'] >= 13 else "#d97706" if nota['calificacion'] >= 10 else "#dc2626"
+        
+        notas_html += f"""
+        <tr style="border-bottom: 1px solid #e5e7eb;">
+            <td style="padding: 12px; font-weight: bold;">{nota['tipo_nota']}</td>
+            <td style="padding: 12px; text-align: center;">
+                <span style="background-color: {nota_color}20; color: {nota_color}; padding: 4px 8px; border-radius: 4px; font-weight: bold;">
+                    {nota['calificacion']}
+                </span>
+            </td>
+            <td style="padding: 12px; text-align: center;">
+                <span style="color: {nota_color}; font-weight: bold;">{nota_estado}</span>
+            </td>
+            <td style="padding: 12px; text-align: center;">{nota['fecha']}</td>
+        </tr>
+        """
+    
+    # Plantilla HTML del email
+    html_content = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="utf-8">
+        <title>Reporte de Notas - {asignatura_nombre}</title>
+        <style>
+            body {{
+                font-family: Arial, sans-serif;
+                line-height: 1.6;
+                color: #333;
+                max-width: 700px;
+                margin: 0 auto;
+                padding: 20px;
+            }}
+            .header {{
+                background-color: #3b82f6;
+                color: white;
+                padding: 25px;
+                text-align: center;
+                border-radius: 8px 8px 0 0;
+            }}
+            .content {{
+                background-color: #f8fafc;
+                padding: 30px;
+                border-radius: 0 0 8px 8px;
+            }}
+            .summary-card {{
+                background-color: white;
+                padding: 25px;
+                border-radius: 12px;
+                border: 2px solid #e5e7eb;
+                margin: 20px 0;
+                text-align: center;
+            }}
+            .average-value {{
+                font-size: 48px;
+                font-weight: bold;
+                color: {color_estado};
+                margin: 10px 0;
+            }}
+            .average-status {{
+                background-color: {bg_estado};
+                color: {color_estado};
+                padding: 8px 16px;
+                border-radius: 20px;
+                font-weight: bold;
+                display: inline-block;
+                margin: 10px 0;
+            }}
+            .grades-table {{
+                background-color: white;
+                border-radius: 8px;
+                overflow: hidden;
+                margin: 20px 0;
+                box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            }}
+            .grades-table table {{
+                width: 100%;
+                border-collapse: collapse;
+            }}
+            .grades-table th {{
+                background-color: #f9fafb;
+                padding: 15px;
+                text-align: left;
+                font-weight: bold;
+                color: #374151;
+                border-bottom: 2px solid #e5e7eb;
+            }}
+            .grades-table td {{
+                padding: 12px 15px;
+            }}
+            .info-box {{
+                background-color: #eff6ff;
+                border: 1px solid #3b82f6;
+                color: #1e40af;
+                padding: 15px;
+                border-radius: 8px;
+                margin: 20px 0;
+            }}
+            .footer {{
+                text-align: center;
+                margin-top: 30px;
+                color: #6b7280;
+                font-size: 14px;
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="header">
+            <h1>📊 Reporte de Notas</h1>
+            <p>{asignatura_nombre}</p>
+        </div>
+        
+        <div class="content">
+            <h2>Hola {nombre_alumno},</h2>
+            
+            <p>Te enviamos el reporte completo de tus calificaciones en la asignatura <strong>{asignatura_nombre}</strong>.</p>
+            
+            <div class="summary-card">
+                <h3>📈 Resumen General</h3>
+                <div class="average-value">{promedio:.1f}</div>
+                <div class="average-status">{estado_general}</div>
+                <p style="margin: 10px 0 0 0; color: #6b7280;">Promedio General</p>
+            </div>
+            
+            <div class="grades-table">
+                <h3 style="padding: 20px 20px 10px 20px; margin: 0; color: #374151;">📋 Detalle de Calificaciones</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Tipo de Evaluación</th>
+                            <th style="text-align: center;">Calificación</th>
+                            <th style="text-align: center;">Estado</th>
+                            <th style="text-align: center;">Fecha</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {notas_html}
+                    </tbody>
+                </table>
+            </div>
+            
+            <div class="info-box">
+                <h4>ℹ️ Información Importante:</h4>
+                <ul>
+                    <li>Este reporte incluye todas las calificaciones registradas en {asignatura_nombre}</li>
+                    <li>El promedio se calcula sobre todas las evaluaciones realizadas</li>
+                    <li>Puedes acceder al sistema para ver más detalles y otras asignaturas</li>
+                    <li>Si tienes dudas sobre alguna calificación, contacta a tu docente</li>
+                </ul>
+            </div>
+            
+            <h3>🎯 Criterios de Evaluación:</h3>
+            <ul>
+                <li><strong>13-20:</strong> Aprobado</li>
+                <li><strong>10-12:</strong> Recuperación</li>
+                <li><strong>0-9:</strong> Desaprobado</li>
+            </ul>
+            
+            <p>¡Sigue esforzándote! Tu dedicación es importante para tu formación académica.</p>
+            
+            <p>Saludos cordiales,<br>Equipo del Sistema de Gestión de Notas</p>
+        </div>
+        
+        <div class="footer">
+            <p>Este es un email automático del Sistema de Gestión de Notas</p>
+            <p>Por favor, no respondas a este mensaje</p>
+        </div>
+    </body>
+    </html>
+    """
+    
+    # Crear el mensaje
+    message = MessageSchema(
+        subject=f"📊 Reporte de Notas - {asignatura_nombre}",
+        recipients=[email],
+        body=html_content,
+        subtype="html"
+    )
+    
+    try:
+        # Enviar el email
+        await fastmail.send_message(message)
+        return {"success": True, "message": f"Reporte de notas enviado exitosamente a {email}"}
+    except Exception as e:
+        return {"success": False, "message": f"Error al enviar reporte de notas: {str(e)}"}
