@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Boolean
+from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Boolean, Date
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from database import Base
@@ -24,6 +24,9 @@ class Alumno(Base):
     id = Column(Integer, primary_key=True, index=True)
     nombre_completo = Column(String(200), nullable=False)
     dni = Column(String(20), unique=True, index=True, nullable=False)
+    fecha_nacimiento = Column(Date, nullable=True)
+    genero = Column(String(20), nullable=True)  # Masculino, Femenino, Otro
+    telefono = Column(String(20), nullable=True)
     ciclo = Column(String(50), nullable=False)
     usuario_id = Column(Integer, ForeignKey("usuarios.id"), nullable=False)
     

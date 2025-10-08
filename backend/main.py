@@ -15,13 +15,17 @@ app = FastAPI(
 )
 
 # Configurar CORS
+# En la configuración CORS (líneas 20-25):
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "http://localhost:3000",  # React dev server (puerto original)
-        "http://localhost:3001",  # React dev server (nuevo puerto)
-        "http://127.0.0.1:3000",  # Alternativa localhost
-        "http://127.0.0.1:3001",  # Alternativa localhost
+        "http://localhost:3000",
+        "http://localhost:3001", 
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:3001",
+        "https://jointed-chet-sidereally.ngrok-free.dev",
+        "https://jointed-chet-sidereally.ngrok-free.dev",  # ← Túnel del frontend
+         
     ],
     allow_credentials=True,
     allow_methods=["*"],
