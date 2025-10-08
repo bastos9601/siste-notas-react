@@ -59,6 +59,9 @@ async def crear_alumno(
     db_alumno = Alumno(
         nombre_completo=alumno_data.nombre_completo,
         dni=alumno_data.dni,
+        fecha_nacimiento=alumno_data.fecha_nacimiento,
+        genero=alumno_data.genero,
+        telefono=alumno_data.telefono,
         ciclo=alumno_data.ciclo,
         usuario_id=db_user.id
     )
@@ -116,6 +119,9 @@ async def actualizar_alumno(
     # Actualizar datos del alumno
     db_alumno.nombre_completo = alumno_data.nombre_completo
     db_alumno.dni = alumno_data.dni
+    db_alumno.fecha_nacimiento = alumno_data.fecha_nacimiento
+    db_alumno.genero = alumno_data.genero
+    db_alumno.telefono = alumno_data.telefono
     db_alumno.ciclo = alumno_data.ciclo
     
     # Actualizar datos del usuario
@@ -168,14 +174,48 @@ async def eliminar_alumno(
     
     return {"message": "Alumno eliminado correctamente junto con sus notas y matrículas"}
 
-@router.get("/alumnos", response_model=List[AlumnoSchema])
+@router.get("/alumnos")
 async def listar_alumnos(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(require_role("admin"))
 ):
     """Listar todos los alumnos"""
-    alumnos = db.query(Alumno).all()
-    return alumnos
+    try:
+        alumnos = db.query(Alumno).order_by(Alumno.nombre_completo.asc()).all()
+        print(f"DEBUG: Encontrados {len(alumnos)} alumnos")
+        
+        # Convertir manualmente a diccionario para evitar problemas de serialización
+        result = []
+        for alumno in alumnos:
+            usuario = db.query(Usuario).filter(Usuario.id == alumno.usuario_id).first()
+            result.append({
+                "id": alumno.id,
+                "nombre_completo": alumno.nombre_completo,
+                "dni": alumno.dni,
+                "fecha_nacimiento": alumno.fecha_nacimiento,
+                "genero": alumno.genero,
+                "telefono": alumno.telefono,
+                "ciclo": alumno.ciclo,
+                "usuario_id": alumno.usuario_id,
+                "usuario": {
+                    "id": usuario.id,
+                    "nombre": usuario.nombre,
+                    "email": usuario.email,
+                    "rol": usuario.rol,
+                    "activo": usuario.activo,
+                    "fecha_creacion": usuario.fecha_creacion
+                } if usuario else None
+            })
+        
+        return result
+    except Exception as e:
+        print(f"DEBUG ERROR: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al obtener alumnos: {str(e)}"
+        )
 
 @router.get("/alumnos/{alumno_id}", response_model=AlumnoSchema)
 async def obtener_alumno(
@@ -646,6 +686,7 @@ async def listar_todas_notas(
             "asignatura_nombre": nota.asignatura.nombre,
             "docente_nombre": nota.asignatura.docente.nombre_completo,
             "calificacion": nota.calificacion,
+            "tipo_nota": nota.tipo_nota,
             "fecha_registro": nota.fecha_registro
         })
     

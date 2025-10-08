@@ -1,6 +1,6 @@
 from pydantic import BaseModel, EmailStr
 from typing import Optional, List
-from datetime import datetime
+from datetime import datetime, date
 
 # Schemas para Usuario
 class UsuarioBase(BaseModel):
@@ -23,6 +23,9 @@ class Usuario(UsuarioBase):
 class AlumnoBase(BaseModel):
     nombre_completo: str
     dni: str
+    fecha_nacimiento: Optional[date] = None
+    genero: Optional[str] = None
+    telefono: Optional[str] = None
     ciclo: str
 
 class AlumnoCreate(AlumnoBase):
@@ -32,6 +35,9 @@ class AlumnoCreate(AlumnoBase):
 class AlumnoUpdate(BaseModel):
     nombre_completo: str
     dni: str
+    fecha_nacimiento: Optional[date] = None
+    genero: Optional[str] = None
+    telefono: Optional[str] = None
     ciclo: str
     email: EmailStr
     password: str | None = None  # Opcional para actualización
