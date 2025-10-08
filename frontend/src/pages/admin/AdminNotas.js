@@ -61,6 +61,104 @@ const AdminNotas = () => {
     });
   };
 
+  // Función para calcular el promedio final simplificado: (Actividades + Parciales + Examen Final + Prácticas) ÷ 4
+  const calcularPromedioFinalSimplificado = (notasAlumno) => {
+    // Usar todas las notas (no filtrar por publicada ya que puede no existir ese campo)
+    const todasLasNotas = notasAlumno;
+    
+    // Clasificar notas por tipo (usando toLowerCase para ser más flexible)
+    const actividades = todasLasNotas.filter(nota => {
+      const tipo = nota.tipo_nota?.toLowerCase() || '';
+      return ['participacion', 'tarea', 'quiz', 'exposicion', 'laboratorio', 'trabajo_grupal', 'actividad'].includes(tipo);
+    });
+    
+    const practicas = todasLasNotas.filter(nota => {
+      const tipo = nota.tipo_nota?.toLowerCase() || '';
+      return tipo === 'practica' || tipo === 'práctica';
+    });
+    
+    const parciales = todasLasNotas.filter(nota => {
+      const tipo = nota.tipo_nota?.toLowerCase() || '';
+      return tipo === 'examen_parcial' || tipo === 'parcial';
+    });
+    
+    const examenFinal = todasLasNotas.find(nota => {
+      const tipo = nota.tipo_nota?.toLowerCase() || '';
+      return tipo === 'examen_final' || tipo === 'final';
+    });
+    
+    // Calcular promedios
+    const promedioActividades = actividades.length > 0 
+      ? actividades.reduce((sum, nota) => sum + nota.calificacion, 0) / actividades.length 
+      : 0;
+    
+    const promedioPracticas = practicas.length > 0 
+      ? practicas.reduce((sum, nota) => sum + nota.calificacion, 0) / practicas.length 
+      : 0;
+    
+    const promedioParciales = parciales.length > 0 
+      ? parciales.reduce((sum, nota) => sum + nota.calificacion, 0) / parciales.length 
+      : 0;
+    
+    const notaExamenFinal = examenFinal ? examenFinal.calificacion : 0;
+    
+    // Promedio final simplificado: siempre dividir entre 4
+    const sumaPromedios = promedioActividades + promedioPracticas + promedioParciales + notaExamenFinal;
+    const promedioFinal = sumaPromedios / 4;
+    
+    // Debug: mostrar información de cálculo
+    console.log('Debug cálculo promedio:', {
+      totalNotas: todasLasNotas.length,
+      actividades: actividades.length,
+      practicas: practicas.length,
+      parciales: parciales.length,
+      examenFinal: !!examenFinal,
+      promedioActividades,
+      promedioPracticas,
+      promedioParciales,
+      notaExamenFinal,
+      sumaPromedios,
+      promedioFinal
+    });
+    
+    return {
+      promedioFinal: promedioFinal.toFixed(1),
+      promedioActividades: promedioActividades.toFixed(1),
+      promedioPracticas: promedioPracticas.toFixed(1),
+      promedioParciales: promedioParciales.toFixed(1),
+      notaExamenFinal: notaExamenFinal.toFixed(1),
+      cantidadActividades: actividades.length,
+      cantidadPracticas: practicas.length,
+      cantidadParciales: parciales.length,
+      tieneExamenFinal: !!examenFinal
+    };
+  };
+
+  // Función para calcular el promedio general usando la lógica simplificada
+  const calcularPromedioGeneral = () => {
+    if (notas.length === 0) return '0.0';
+    
+    // Agrupar notas por alumno-asignatura
+    const agrupadas = {};
+    filteredNotas.forEach(nota => {
+      const key = `${nota.alumno_id}-${nota.asignatura_id}`;
+      if (!agrupadas[key]) {
+        agrupadas[key] = [];
+      }
+      agrupadas[key].push(nota);
+    });
+    
+    // Calcular promedio final para cada grupo usando la lógica simplificada
+    const promediosFinales = Object.values(agrupadas).map(grupo => {
+      const promedioFinalSimplificado = calcularPromedioFinalSimplificado(grupo);
+      return parseFloat(promedioFinalSimplificado.promedioFinal);
+    });
+    
+    // Calcular promedio general
+    const promedioGeneral = promediosFinales.reduce((sum, promedio) => sum + promedio, 0) / promediosFinales.length;
+    return promedioGeneral.toFixed(1);
+  };
+
   // Obtener ciclos únicos con contadores de notas
   const ciclosConContadores = notas.reduce((acc, nota) => {
     const ciclo = nota.alumno_ciclo;
@@ -102,15 +200,15 @@ const AdminNotas = () => {
     // Separar en agrupadas (más de 1 nota) e individuales
     Object.values(agrupadas).forEach(grupo => {
       if (grupo.notas.length > 1) {
-        // Calcular estadísticas del grupo
+        // Calcular estadísticas del grupo usando la lógica simplificada
+        const promedioFinalSimplificado = calcularPromedioFinalSimplificado(grupo.notas);
         const calificaciones = grupo.notas.map(n => n.calificacion);
-        const promedio = calificaciones.reduce((sum, cal) => sum + cal, 0) / calificaciones.length;
         const notaMaxima = Math.max(...calificaciones);
         const notaMinima = Math.min(...calificaciones);
         const fechaMasReciente = new Date(Math.max(...grupo.notas.map(n => new Date(n.fecha_registro))));
         
         grupo.estadisticas = {
-          promedio: promedio.toFixed(1),
+          promedio: promedioFinalSimplificado.promedioFinal, // Usar el promedio final simplificado
           notaMaxima,
           notaMinima,
           totalNotas: grupo.notas.length,
@@ -269,7 +367,7 @@ const AdminNotas = () => {
           </div>
         </div>
 
-        <div className="bg-white p-4 rounded-lg border border-gray-200">
+        {/* <div className="bg-white p-4 rounded-lg border border-gray-200">
           <div className="flex items-center">
             <div className="p-2 bg-orange-100 rounded-lg">
               <Calendar className="h-5 w-5 text-orange-600" />
@@ -277,14 +375,11 @@ const AdminNotas = () => {
             <div className="ml-3">
               <p className="text-sm font-medium text-gray-600">Promedio General</p>
               <p className="text-2xl font-bold text-gray-900">
-                {notas.length > 0 
-                  ? (notas.reduce((sum, n) => sum + n.calificacion, 0) / notas.length).toFixed(1)
-                  : '0.0'
-                }
+                {calcularPromedioGeneral()}
               </p>
             </div>
           </div>
-        </div>
+        </div> */}
 
         <div className="bg-white p-4 rounded-lg border border-gray-200">
           <div className="flex items-center">
@@ -336,98 +431,102 @@ const AdminNotas = () => {
                 </tr>
               ) : (
                 notasParaMostrar.map((item, index) => {
-                  // Si es un grupo (tiene la propiedad 'notas')
-                  if (item.notas) {
-                    return (
-                      <tr key={`grupo-${item.alumno_id}-${item.asignatura_id}`} className="hover:bg-gray-50 bg-blue-50">
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div>
-                            <div className="text-sm font-medium text-gray-900">
-                              {item.alumno_nombre}
+                  const alumnoId = item.alumno_id || item.id;
+                  const alumnoNombre = item.alumno_nombre;
+                  
+                  return (
+                    <React.Fragment key={item.notas ? `grupo-${item.alumno_id}-${item.asignatura_id}` : item.id}>
+                      {/* Si es un grupo (tiene la propiedad 'notas') */}
+                      {item.notas ? (
+                        <tr className="hover:bg-gray-50 bg-blue-50">
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div>
+                              <div className="text-sm font-medium text-gray-900">
+                                {item.alumno_nombre}
+                              </div>
+                              <div className="text-sm text-gray-500">
+                                DNI: {item.alumno_dni}
+                              </div>
                             </div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800">
+                              {item.alumno_ciclo}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="text-sm text-gray-900">
+                              {item.asignatura_nombre}
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="text-sm text-gray-900">
+                              {item.docente_nombre}
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="space-y-1">
+                              <div className="flex items-center space-x-2">
+                                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getCalificacionColor(item.estadisticas.promedio)}`}>
+                                  Promedio: {item.estadisticas.promedio}
+                                </span>
+                              </div>
+                              <div className="text-xs text-gray-500">
+                                {item.estadisticas.totalNotas} notas • Max: {item.estadisticas.notaMaxima} • Min: {item.estadisticas.notaMinima}
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
                             <div className="text-sm text-gray-500">
-                              DNI: {item.alumno_dni}
+                              {formatDate(item.estadisticas.fechaMasReciente)}
                             </div>
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800">
-                            {item.alumno_ciclo}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm text-gray-900">
-                            {item.asignatura_nombre}
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm text-gray-900">
-                            {item.docente_nombre}
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="space-y-1">
+                          </td>
+                        </tr>
+                      ) : (
+                        /* Nota individual */
+                        <tr className="hover:bg-gray-50">
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div>
+                              <div className="text-sm font-medium text-gray-900">
+                                {item.alumno_nombre}
+                              </div>
+                              <div className="text-sm text-gray-500">
+                                DNI: {item.alumno_dni}
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800">
+                              {item.alumno_ciclo}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="text-sm text-gray-900">
+                              {item.asignatura_nombre}
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="text-sm text-gray-900">
+                              {item.docente_nombre}
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
                             <div className="flex items-center space-x-2">
-                              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getCalificacionColor(item.estadisticas.promedio)}`}>
-                                Promedio: {item.estadisticas.promedio}
+                              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getCalificacionColor(item.calificacion)}`}>
+                                {item.calificacion} {getCalificacionText(item.calificacion)}
                               </span>
                             </div>
-                            <div className="text-xs text-gray-500">
-                              {item.estadisticas.totalNotas} notas • Max: {item.estadisticas.notaMaxima} • Min: {item.estadisticas.notaMinima}
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm text-gray-500">
-                            {formatDate(item.estadisticas.fechaMasReciente)}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  } else {
-                    // Nota individual
-                    return (
-                      <tr key={item.id} className="hover:bg-gray-50">
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div>
-                            <div className="text-sm font-medium text-gray-900">
-                              {item.alumno_nombre}
-                            </div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
                             <div className="text-sm text-gray-500">
-                              DNI: {item.alumno_dni}
+                              {formatDate(item.fecha_registro)}
                             </div>
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800">
-                            {item.alumno_ciclo}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm text-gray-900">
-                            {item.asignatura_nombre}
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm text-gray-900">
-                            {item.docente_nombre}
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="flex items-center space-x-2">
-                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getCalificacionColor(item.calificacion)}`}>
-                              {item.calificacion} {getCalificacionText(item.calificacion)}
-                            </span>
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm text-gray-500">
-                            {formatDate(item.fecha_registro)}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  }
+                          </td>
+                        </tr>
+                      )}
+                      
+                    </React.Fragment>
+                  );
                 })
               )}
             </tbody>

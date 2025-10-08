@@ -137,7 +137,7 @@ ${response.instructions}
     const matchesCiclo = selectedCiclo ? alumno.ciclo === selectedCiclo : true;
     
     return matchesSearch && matchesCiclo;
-  });
+  }).sort((a, b) => a.nombre_completo.localeCompare(b.nombre_completo));
 
   if (loading) {
     return (
