@@ -15,10 +15,24 @@ const AdminMatriculas = () => {
     alumno_id: '',
     asignatura_id: ''
   });
+  const [dniSearchTerm, setDniSearchTerm] = useState('');
+  const [filteredAlumnos, setFilteredAlumnos] = useState([]);
 
   useEffect(() => {
     loadData();
   }, []);
+
+  useEffect(() => {
+    if (dniSearchTerm) {
+      const filtered = alumnos.filter(alumno => 
+        alumno.dni.toLowerCase().includes(dniSearchTerm.toLowerCase()) ||
+        alumno.nombre_completo.toLowerCase().includes(dniSearchTerm.toLowerCase())
+      );
+      setFilteredAlumnos(filtered);
+    } else {
+      setFilteredAlumnos(alumnos);
+    }
+  }, [dniSearchTerm, alumnos]);
 
   const loadData = async () => {
     try {
@@ -66,6 +80,7 @@ const AdminMatriculas = () => {
       alumno_id: '',
       asignatura_id: ''
     });
+    setDniSearchTerm('');
   };
 
   const handleDeleteMatricula = async (alumnoId, asignaturaId) => {
@@ -440,6 +455,25 @@ const AdminMatriculas = () => {
               </h3>
               
               <form onSubmit={handleSubmit} className="space-y-4">
+                {/* Buscador por DNI */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Buscar Alumno por DNI o Nombre
+                  </label>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                      <Search className="h-4 w-4 text-gray-400" />
+                    </div>
+                    <input
+                      type="text"
+                      placeholder="Escribir DNI o nombre del alumno..."
+                      className="input-field pl-10"
+                      value={dniSearchTerm}
+                      onChange={(e) => setDniSearchTerm(e.target.value)}
+                    />
+                  </div>
+                </div>
+
                 <div>
                   <label className="block text-sm font-medium text-gray-700">
                     Alumno
@@ -463,12 +497,17 @@ const AdminMatriculas = () => {
                     }}
                   >
                     <option value="">Seleccionar alumno</option>
-                    {alumnos.map((alumno) => (
+                    {filteredAlumnos.map((alumno) => (
                       <option key={alumno.id} value={alumno.id}>
                         {alumno.nombre_completo} - {alumno.dni} ({alumno.ciclo})
                       </option>
                     ))}
                   </select>
+                  {dniSearchTerm && filteredAlumnos.length === 0 && (
+                    <div className="text-sm text-red-600 mt-1">
+                      No se encontraron alumnos con ese DNI o nombre
+                    </div>
+                  )}
                 </div>
                 
                 {/* Mostrar ciclo del alumno seleccionado */}

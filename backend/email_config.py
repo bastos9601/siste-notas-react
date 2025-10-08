@@ -122,6 +122,14 @@ async def send_password_email(email: str, nombre: str, temp_password: str):
                 <li>¡Comienza a usar el sistema!</li>
             </ol>
             
+            <p>Puedes ingresar al sistema para consultar tus calificaciones:</p>
+            
+            <div style="text-align: center; margin: 30px 0;">
+                <a href="http://localhost:3001" style="background-color: #4285F4; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">
+                    Ingresar al Sistema
+                </a>
+            </div>
+            
             <p>Si tienes alguna pregunta o necesitas ayuda, no dudes en contactar al administrador del sistema.</p>
             
             <p>¡Bienvenido al sistema!</p>
@@ -701,3 +709,114 @@ async def send_all_grades_email(email: str, nombre_alumno: str, notas_data: list
         return {"success": True, "message": f"Reporte de notas enviado exitosamente a {email}"}
     except Exception as e:
         return {"success": False, "message": f"Error al enviar reporte de notas: {str(e)}"}
+
+async def send_grades_published_notification(email: str, nombre_alumno: str, asignatura_nombre: str):
+    """Enviar notificación simple de que las notas están publicadas"""
+    
+    # Plantilla HTML del email - notificación simple
+    html_content = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="utf-8">
+        <title>Notas Publicadas - Sistema de Notas</title>
+        <style>
+            body {{
+                font-family: Arial, sans-serif;
+                line-height: 1.6;
+                color: #333;
+                max-width: 600px;
+                margin: 0 auto;
+                padding: 20px;
+            }}
+            .header {{
+                background-color: #3b82f6;
+                color: white;
+                padding: 20px;
+                text-align: center;
+                border-radius: 8px 8px 0 0;
+            }}
+            .content {{
+                background-color: #f8fafc;
+                padding: 30px;
+                border-radius: 0 0 8px 8px;
+            }}
+            .notification-box {{
+                background-color: white;
+                padding: 25px;
+                border-radius: 12px;
+                border-left: 4px solid #3b82f6;
+                margin: 20px 0;
+                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            }}
+            .button {{
+                display: inline-block;
+                background-color: #3b82f6;
+                color: white;
+                padding: 12px 24px;
+                text-decoration: none;
+                border-radius: 6px;
+                font-weight: bold;
+                margin: 20px 0;
+            }}
+            .footer {{
+                text-align: center;
+                margin-top: 30px;
+                color: #6b7280;
+                font-size: 14px;
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="header">
+            <h1>📢 Notificación de Notas</h1>
+        </div>
+        
+        <div class="content">
+            <h2>Hola {nombre_alumno},</h2>
+            
+            <div class="notification-box">
+                <h3>✅ Notas Publicadas</h3>
+                <p style="font-size: 16px; margin: 15px 0;">
+                    Te informamos que tus notas de la asignatura <strong>{asignatura_nombre}</strong> 
+                    ya están disponibles en el sistema.
+                </p>
+            </div>
+            
+            <p>Puedes ingresar al sistema para consultar tus calificaciones:</p>
+            
+            <div style="text-align: center;">
+                <a href="http://localhost:3001" class="button" style="color: white;">
+                    Ingresar al Sistema
+                </a>
+            </div>
+            
+            <p style="margin-top: 30px;">
+                Si tienes alguna consulta sobre tus notas, no dudes en contactar a tu docente.
+            </p>
+            
+            <p>Saludos cordiales,<br>Equipo del Sistema de Gestión de Notas</p>
+        </div>
+        
+        <div class="footer">
+            <p>Este es un email automático del Sistema de Gestión de Notas</p>
+            <p>Por favor, no respondas a este mensaje</p>
+        </div>
+    </body>
+    </html>
+    """
+    
+    # Crear el mensaje
+    message = MessageSchema(
+        subject=f"📢 Notas Publicadas - {asignatura_nombre}",
+        recipients=[email],
+        body=html_content,
+        subtype="html"
+    )
+    
+    try:
+        # Enviar el email
+        await fastmail.send_message(message)
+        return {"success": True, "message": f"Notificación enviada exitosamente a {email}"}
+    except Exception as e:
+        return {"success": False, "message": f"Error al enviar notificación: {str(e)}"}

@@ -198,7 +198,7 @@ const Dashboard = () => {
                 </div>
               </div>
 
-              <div className="card">
+              {/* <div className="card">
                 <div className="flex items-center">
                   <div className="flex-shrink-0">
                     <TrendingUp className="h-8 w-8 text-green-600" />
@@ -208,7 +208,7 @@ const Dashboard = () => {
                     <p className="text-2xl font-semibold text-gray-900">{stats.promedio}</p>
                   </div>
                 </div>
-              </div>
+              </div> */}
             </>
           )}
         </div>
