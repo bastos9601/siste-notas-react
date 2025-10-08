@@ -5,6 +5,7 @@ import { alumnoService } from '../../services/alumnoService';
 const AlumnoPromedios = () => {
   const [promedioGeneral, setPromedioGeneral] = useState(null);
   const [promediosPorAsignatura, setPromediosPorAsignatura] = useState([]);
+  const [notas, setNotas] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -13,13 +14,15 @@ const AlumnoPromedios = () => {
 
   const loadData = async () => {
     try {
-      const [promedioData, promediosAsignaturaData] = await Promise.all([
+      const [promedioData, promediosAsignaturaData, notasData] = await Promise.all([
         alumnoService.getMiPromedio(),
-        alumnoService.getPromedioPorAsignatura()
+        alumnoService.getPromedioPorAsignatura(),
+        alumnoService.getMisNotas()
       ]);
       
       setPromedioGeneral(promedioData);
       setPromediosPorAsignatura(promediosAsignaturaData);
+      setNotas(notasData);
     } catch (error) {
       console.error('Error al cargar datos:', error);
     } finally {
@@ -41,6 +44,81 @@ const AlumnoPromedios = () => {
     return 'bg-red-100';
   };
 
+  const calcularPromediosDetallados = (asignaturaId) => {
+    // Filtrar notas de la asignatura específica y solo notas publicadas
+    const notasAsignatura = notas.filter(nota => 
+      nota.asignatura_id === asignaturaId && nota.publicada
+    );
+    
+    // Clasificar notas por tipo
+    const actividades = notasAsignatura.filter(nota => 
+      ['participacion', 'tarea', 'quiz', 'exposicion', 'laboratorio', 'trabajo_grupal'].includes(nota.tipo_nota)
+    );
+    
+    const practicas = notasAsignatura.filter(nota => 
+      nota.tipo_nota === 'practica'
+    );
+    
+    const parciales = notasAsignatura.filter(nota => 
+      nota.tipo_nota === 'examen_parcial'
+    );
+    
+    const examenFinal = notasAsignatura.find(nota => 
+      nota.tipo_nota === 'examen_final'
+    );
+    
+    const proyectos = notasAsignatura.filter(nota => 
+      nota.tipo_nota === 'proyecto'
+    );
+    
+    // Calcular promedios
+    const promedioActividades = actividades.length > 0 
+      ? actividades.reduce((sum, nota) => sum + nota.calificacion, 0) / actividades.length 
+      : 0;
+    
+    const promedioPracticas = practicas.length > 0 
+      ? practicas.reduce((sum, nota) => sum + nota.calificacion, 0) / practicas.length 
+      : 0;
+    
+    const promedioParciales = parciales.length > 0 
+      ? parciales.reduce((sum, nota) => sum + nota.calificacion, 0) / parciales.length 
+      : 0;
+    
+    const notaExamenFinal = examenFinal ? examenFinal.calificacion : 0;
+    
+    const promedioProyectos = proyectos.length > 0 
+      ? proyectos.reduce((sum, nota) => sum + nota.calificacion, 0) / proyectos.length 
+      : 0;
+    
+    // Promedio final dinámico: si hay proyectos, dividir entre 5; si no, entre 4
+    let sumaPromedios = promedioActividades + promedioPracticas + promedioParciales + notaExamenFinal;
+    let divisor = 4;
+    let formulaTexto = "(Actividades + Prácticas + Parciales + Examen Final) ÷ 4";
+    
+    if (proyectos.length > 0) {
+      sumaPromedios += promedioProyectos;
+      divisor = 5;
+      formulaTexto = "(Actividades + Prácticas + Parciales + Examen Final + Proyectos) ÷ 5";
+    }
+    
+    const promedioFinal = sumaPromedios / divisor;
+    
+    return {
+      promedioActividades,
+      promedioPracticas,
+      promedioParciales,
+      notaExamenFinal,
+      promedioProyectos,
+      promedioFinal,
+      cantidadActividades: actividades.length,
+      cantidadPracticas: practicas.length,
+      cantidadParciales: parciales.length,
+      tieneExamenFinal: !!examenFinal,
+      cantidadProyectos: proyectos.length,
+      formulaTexto
+    };
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -56,8 +134,8 @@ const AlumnoPromedios = () => {
         <h1 className="text-2xl font-bold text-gray-900">Mis Promedios</h1>
       </div>
 
-      {/* Promedio General */}
-      {promedioGeneral && (
+      {/* Promedio General - OCULTO */}
+      {/* {promedioGeneral && (
         <div className="card">
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-xl font-semibold text-gray-900">Promedio General</h2>
@@ -94,7 +172,7 @@ const AlumnoPromedios = () => {
             )}
           </div>
         </div>
-      )}
+      )} */}
 
       {/* Promedios por Asignatura */}
       <div className="card">
@@ -112,48 +190,57 @@ const AlumnoPromedios = () => {
             </p>
           </div>
         ) : (
-          <div className="space-y-4">
-            {promediosPorAsignatura.map((promedio) => (
-              <div key={promedio.asignatura_id} className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-4">
-                    <div className={`p-2 rounded-lg ${getGradeBgColor(promedio.promedio)}`}>
-                      <BookOpen className={`h-5 w-5 ${getGradeColor(promedio.promedio)}`} />
+          <div className="space-y-6">
+            {promediosPorAsignatura.map((promedio) => {
+              const promediosDetallados = calcularPromediosDetallados(promedio.asignatura_id);
+              return (
+                <div key={promedio.asignatura_id} className="border border-gray-200 rounded-lg p-6 hover:shadow-md transition-shadow">
+                  {/* Header de la asignatura */}
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center space-x-4">
+                      <div className={`p-2 rounded-lg ${getGradeBgColor(promedio.promedio)}`}>
+                        <BookOpen className={`h-5 w-5 ${getGradeColor(promedio.promedio)}`} />
+                      </div>
+                      <div>
+                        <h3 className="text-lg font-medium text-gray-900">{promedio.asignatura_nombre}</h3>
+                        <p className="text-sm text-gray-500">{promedio.total_notas} nota(s) registrada(s)</p>
+                      </div>
                     </div>
-                    <div>
-                      <h3 className="text-lg font-medium text-gray-900">{promedio.asignatura_nombre}</h3>
-                      <p className="text-sm text-gray-500">{promedio.total_notas} nota(s) registrada(s)</p>
+                    
+                    <div className="text-right">
+                      <div className={`text-2xl font-bold ${
+                        promediosDetallados.promedioFinal >= 13 ? 'text-green-600' :
+                        promediosDetallados.promedioFinal >= 10 ? 'text-yellow-600' :
+                        'text-red-600'
+                      }`}>
+                        {promediosDetallados.promedioFinal > 0 ? promediosDetallados.promedioFinal.toFixed(2) : '-'}
+                      </div>
+                      <div className="text-sm text-gray-500">Promedio Final</div>
                     </div>
                   </div>
                   
-                  <div className="text-right">
-                    <div className={`text-2xl font-bold ${getGradeColor(promedio.promedio)}`}>
-                      {promedio.promedio}
+                  {/* Estadísticas básicas */}
+                  {promedio.total_notas > 0 && (
+                    <div className="grid grid-cols-2 gap-4 text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-gray-500">Nota Máxima:</span>
+                        <span className="font-medium text-green-600">{promedio.nota_maxima}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-500">Nota Mínima:</span>
+                        <span className="font-medium text-red-600">{promedio.nota_minima}</span>
+                      </div>
                     </div>
-                    <div className="text-sm text-gray-500">Promedio</div>
-                  </div>
+                  )}
                 </div>
-                
-                {promedio.total_notas > 0 && (
-                  <div className="mt-3 grid grid-cols-2 gap-4 text-sm">
-                    <div className="flex justify-between">
-                      <span className="text-gray-500">Nota Máxima:</span>
-                      <span className="font-medium text-green-600">{promedio.nota_maxima}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-500">Nota Mínima:</span>
-                      <span className="font-medium text-red-600">{promedio.nota_minima}</span>
-                    </div>
-                  </div>
-                )}
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
 
-      {/* Leyenda de Colores */}
-      <div className="card">
+      {/* Leyenda de Colores - OCULTO */}
+      {/* <div className="card">
         <h3 className="text-lg font-semibold text-gray-900 mb-4">Leyenda de Promedios</h3>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <div className="flex items-center space-x-2">
@@ -173,7 +260,7 @@ const AlumnoPromedios = () => {
             <span className="text-sm text-gray-600">0-10 (Deficiente)</span>
           </div>
         </div>
-      </div>
+      </div> */}
     </div>
   );
 };

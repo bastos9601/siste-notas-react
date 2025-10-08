@@ -396,7 +396,7 @@ async def publicar_nota(
     db.commit()
     db.refresh(nota)
     
-    # Obtener información del alumno para el email
+    # Obtener información del alumno
     alumno = db.query(Alumno).filter(Alumno.id == nota.alumno_id).first()
     if not alumno:
         raise HTTPException(
@@ -404,73 +404,20 @@ async def publicar_nota(
             detail="Alumno no encontrado"
         )
     
-    # Intentar enviar email de notificación
-    try:
-        from email_config import send_grade_notification
-        email_result = await send_grade_notification(
-            email=alumno.usuario.email,
-            nombre_alumno=alumno.nombre_completo,
-            asignatura=asignatura.nombre,
-            calificacion=nota.calificacion,
-            tipo_nota=nota.tipo_nota,
-            fecha=nota.fecha_registro.strftime("%d/%m/%Y")
-        )
-        
-        if email_result["success"]:
-            return {
-                "message": "Nota publicada y notificación enviada por email",
-                "nota": {
-                    "id": nota.id,
-                    "calificacion": nota.calificacion,
-                    "tipo_nota": nota.tipo_nota,
-                    "publicada": nota.publicada,
-                    "alumno": {
-                        "nombre": alumno.nombre_completo,
-                        "email": alumno.usuario.email
-                    },
-                    "asignatura": asignatura.nombre
-                },
-                "email_sent": True,
-                "email_message": email_result["message"]
-            }
-        else:
-            # Si falla el email, la nota se publica pero se informa el error
-            return {
-                "message": "Nota publicada, pero falló el envío de notificación por email",
-                "nota": {
-                    "id": nota.id,
-                    "calificacion": nota.calificacion,
-                    "tipo_nota": nota.tipo_nota,
-                    "publicada": nota.publicada,
-                    "alumno": {
-                        "nombre": alumno.nombre_completo,
-                        "email": alumno.usuario.email
-                    },
-                    "asignatura": asignatura.nombre
-                },
-                "email_sent": False,
-                "email_error": email_result["message"],
-                "instructions": "La nota se publicó correctamente pero no se pudo enviar la notificación por email. Verifica la configuración de email."
-            }
-    except Exception as e:
-        # Si hay error en el servicio de email, la nota se publica pero se informa el error
-        return {
-            "message": "Nota publicada, pero falló el envío de notificación por email",
-            "nota": {
-                "id": nota.id,
-                "calificacion": nota.calificacion,
-                "tipo_nota": nota.tipo_nota,
-                "publicada": nota.publicada,
-                "alumno": {
-                    "nombre": alumno.nombre_completo,
-                    "email": alumno.usuario.email
-                },
-                "asignatura": asignatura.nombre
+    return {
+        "message": "Nota publicada exitosamente",
+        "nota": {
+            "id": nota.id,
+            "calificacion": nota.calificacion,
+            "tipo_nota": nota.tipo_nota,
+            "publicada": nota.publicada,
+            "alumno": {
+                "nombre": alumno.nombre_completo,
+                "email": alumno.usuario.email
             },
-            "email_sent": False,
-            "email_error": f"Error en el servicio de email: {str(e)}",
-            "instructions": "La nota se publicó correctamente pero no se pudo enviar la notificación por email. Verifica la configuración de email."
+            "asignatura": asignatura.nombre
         }
+    }
 
 @router.put("/notas/{nota_id}/despublicar")
 async def despublicar_nota(
@@ -589,40 +536,31 @@ async def enviar_todas_las_notas(
             detail="Alumno no encontrado"
         )
     
-    # Obtener todas las notas del alumno en esta asignatura
+    # Verificar que el alumno tenga notas publicadas en esta asignatura
     notas = db.query(Nota).filter(
         Nota.alumno_id == alumno_id,
-        Nota.asignatura_id == asignatura_id
+        Nota.asignatura_id == asignatura_id,
+        Nota.publicada == True
     ).all()
     
     if not notas:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="El alumno no tiene notas registradas en esta asignatura"
+            detail="El alumno no tiene notas publicadas en esta asignatura"
         )
     
-    # Preparar datos de las notas para el email
-    notas_data = []
-    for nota in notas:
-        notas_data.append({
-            'calificacion': nota.calificacion,
-            'tipo_nota': nota.tipo_nota.replace('_', ' ').title() if nota.tipo_nota else 'Examen Final',
-            'fecha': nota.fecha_registro.strftime("%d/%m/%Y")
-        })
-    
-    # Intentar enviar email con todas las notas
+    # Intentar enviar notificación por email
     try:
-        from email_config import send_all_grades_email
-        email_result = await send_all_grades_email(
+        from email_config import send_grades_published_notification
+        email_result = await send_grades_published_notification(
             email=alumno.usuario.email,
             nombre_alumno=alumno.nombre_completo,
-            notas_data=notas_data,
             asignatura_nombre=asignatura.nombre
         )
         
         if email_result["success"]:
             return {
-                "message": "Reporte de notas enviado exitosamente por email",
+                "message": "Notificación enviada exitosamente por email",
                 "alumno": {
                     "id": alumno.id,
                     "nombre": alumno.nombre_completo,
@@ -632,14 +570,13 @@ async def enviar_todas_las_notas(
                     "id": asignatura.id,
                     "nombre": asignatura.nombre
                 },
-                "notas_enviadas": len(notas_data),
-                "promedio": sum(nota['calificacion'] for nota in notas_data) / len(notas_data),
+                "notas_publicadas": len(notas),
                 "email_sent": True,
                 "email_message": email_result["message"]
             }
         else:
             return {
-                "message": "Error al enviar el reporte de notas por email",
+                "message": "Error al enviar la notificación por email",
                 "alumno": {
                     "id": alumno.id,
                     "nombre": alumno.nombre_completo,
@@ -649,15 +586,14 @@ async def enviar_todas_las_notas(
                     "id": asignatura.id,
                     "nombre": asignatura.nombre
                 },
-                "notas_enviadas": len(notas_data),
-                "promedio": sum(nota['calificacion'] for nota in notas_data) / len(notas_data),
+                "notas_publicadas": len(notas),
                 "email_sent": False,
                 "email_error": email_result["message"],
                 "instructions": "Verifica la configuración de email en el sistema."
             }
     except Exception as e:
         return {
-            "message": "Error al enviar el reporte de notas por email",
+            "message": "Error al enviar la notificación por email",
             "alumno": {
                 "id": alumno.id,
                 "nombre": alumno.nombre_completo,
@@ -667,8 +603,7 @@ async def enviar_todas_las_notas(
                 "id": asignatura.id,
                 "nombre": asignatura.nombre
             },
-            "notas_enviadas": len(notas_data),
-            "promedio": sum(nota['calificacion'] for nota in notas_data) / len(notas_data),
+            "notas_publicadas": len(notas),
             "email_sent": False,
             "email_error": f"Error en el servicio de email: {str(e)}",
             "instructions": "Verifica la configuración de email en el sistema."

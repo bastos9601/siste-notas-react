@@ -385,13 +385,20 @@ ${response.instructions}
                   <label className="block text-sm font-medium text-gray-700">
                     Ciclo
                   </label>
-                  <input
-                    type="text"
+                  <select
                     required
                     className="input-field"
                     value={formData.ciclo}
                     onChange={(e) => setFormData({...formData, ciclo: e.target.value})}
-                  />
+                  >
+                    <option value="">Seleccionar ciclo</option>
+                    <option value="I">I</option>
+                    <option value="II">II</option>
+                    <option value="III">III</option>
+                    <option value="IV">IV</option>
+                    <option value="V">V</option>
+                    <option value="VI">VI</option>
+                  </select>
                 </div>
                 
                 <div>

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Plus, Edit, Trash2, Search, BookOpen, ArrowLeft, Send, EyeOff, Calendar, Mail } from 'lucide-react';
+import { Plus, Edit, Trash2, Search, BookOpen, ArrowLeft, Send, EyeOff, Calendar, Mail, ChevronDown, ChevronRight } from 'lucide-react';
 import { docenteService } from '../../services/docenteService';
 
 const DocenteNotas = () => {
@@ -15,6 +15,7 @@ const DocenteNotas = () => {
   const [showModal, setShowModal] = useState(false);
   const [editingNota, setEditingNota] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [expandedAlumnos, setExpandedAlumnos] = useState(new Set());
   const [formData, setFormData] = useState({
     alumno_id: '',
     asignatura_id: '',
@@ -117,33 +118,7 @@ const DocenteNotas = () => {
           await loadAlumnosYNotas(selectedAsignatura);
         }
         
-        if (response.email_sent) {
-          // Email enviado exitosamente
-          const successMessage = `
-✅ ${response.message}
-
-Alumno: ${response.nota.alumno.nombre}
-Email: ${response.nota.alumno.email}
-Asignatura: ${response.nota.asignatura}
-
-La notificación por email ha sido enviada exitosamente.
-          `;
-          alert(successMessage);
-        } else {
-          // Email falló, pero la nota se publicó
-          const fallbackMessage = `
-⚠️ ${response.message}
-
-Alumno: ${response.nota.alumno.nombre}
-Email: ${response.nota.alumno.email}
-Asignatura: ${response.nota.asignatura}
-
-Error del email: ${response.email_error}
-
-${response.instructions}
-          `;
-          alert(fallbackMessage);
-        }
+        alert(`✅ Nota publicada exitosamente\n\nLa nota ya está disponible para que ${alumnoNombre} pueda verla en el sistema.`);
       } catch (error) {
         console.error('Error al publicar nota:', error);
         const errorMessage = error.response?.data?.detail || 'Error al publicar la nota. Inténtalo de nuevo.';
@@ -180,42 +155,30 @@ La nota ha sido despublicada exitosamente.
   };
 
   const handleEnviarTodasLasNotas = async (alumnoId, alumnoNombre) => {
-    if (window.confirm(`¿Enviar todas las notas de ${alumnoNombre} por email?`)) {
+    if (window.confirm(`¿Enviar notificación de notas publicadas a ${alumnoNombre} por email?`)) {
       try {
         const response = await docenteService.enviarTodasLasNotas(selectedAsignatura, alumnoId);
         
         if (response.email_sent) {
-          const successMessage = `
-✅ ${response.message}
+          const successMessage = `✅ Notificación enviada exitosamente
 
-Alumno: ${response.alumno.nombre}
-Email: ${response.alumno.email}
-Asignatura: ${response.asignatura.nombre}
-Notas enviadas: ${response.notas_enviadas}
-Promedio: ${response.promedio.toFixed(1)}
-
-El reporte de notas ha sido enviado exitosamente por email.
-          `;
+Se ha enviado un email a ${alumnoNombre} (${response.alumno.email}) notificándole que sus notas de ${response.asignatura.nombre} ya están disponibles en el sistema.`;
           alert(successMessage);
         } else {
-          const errorMessage = `
-⚠️ ${response.message}
+          const errorMessage = `⚠️ ${response.message}
 
 Alumno: ${response.alumno.nombre}
 Email: ${response.alumno.email}
 Asignatura: ${response.asignatura.nombre}
-Notas a enviar: ${response.notas_enviadas}
-Promedio: ${response.promedio.toFixed(1)}
 
-Error del email: ${response.email_error}
+Error: ${response.email_error}
 
-${response.instructions}
-          `;
+${response.instructions}`;
           alert(errorMessage);
         }
       } catch (error) {
-        console.error('Error al enviar notas:', error);
-        const errorMessage = error.response?.data?.detail || 'Error al enviar las notas. Inténtalo de nuevo.';
+        console.error('Error al enviar notificación:', error);
+        const errorMessage = error.response?.data?.detail || 'Error al enviar la notificación. Inténtalo de nuevo.';
         alert(`❌ Error: ${errorMessage}`);
       }
     }
@@ -231,8 +194,93 @@ ${response.instructions}
     setEditingNota(null);
   };
 
+  const toggleAlumnoExpansion = (alumnoId) => {
+    setExpandedAlumnos(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(alumnoId)) {
+        newSet.delete(alumnoId);
+      } else {
+        newSet.add(alumnoId);
+      }
+      return newSet;
+    });
+  };
+
   const getNotasForAlumno = (alumnoId) => {
     return notas.filter(nota => nota.alumno_id === alumnoId);
+  };
+
+  const calcularPromedios = (notasAlumno) => {
+    // Filtrar solo notas publicadas
+    const notasPublicadas = notasAlumno.filter(nota => nota.publicada);
+    
+    // Clasificar notas por tipo
+    const actividades = notasPublicadas.filter(nota => 
+      ['participacion', 'tarea', 'quiz', 'exposicion', 'laboratorio', 'trabajo_grupal'].includes(nota.tipo_nota)
+    );
+    
+    const practicas = notasPublicadas.filter(nota => 
+      nota.tipo_nota === 'practica'
+    );
+    
+    const parciales = notasPublicadas.filter(nota => 
+      nota.tipo_nota === 'examen_parcial'
+    );
+    
+    const examenFinal = notasPublicadas.find(nota => 
+      nota.tipo_nota === 'examen_final'
+    );
+    
+    const proyectos = notasPublicadas.filter(nota => 
+      nota.tipo_nota === 'proyecto'
+    );
+    
+    // Calcular promedios
+    const promedioActividades = actividades.length > 0 
+      ? actividades.reduce((sum, nota) => sum + nota.calificacion, 0) / actividades.length 
+      : 0;
+    
+    const promedioPracticas = practicas.length > 0 
+      ? practicas.reduce((sum, nota) => sum + nota.calificacion, 0) / practicas.length 
+      : 0;
+    
+    const promedioParciales = parciales.length > 0 
+      ? parciales.reduce((sum, nota) => sum + nota.calificacion, 0) / parciales.length 
+      : 0;
+    
+    const notaExamenFinal = examenFinal ? examenFinal.calificacion : 0;
+    
+    const promedioProyectos = proyectos.length > 0 
+      ? proyectos.reduce((sum, nota) => sum + nota.calificacion, 0) / proyectos.length 
+      : 0;
+    
+    // Promedio final dinámico: si hay proyectos, dividir entre 5; si no, entre 4
+    let sumaPromedios = promedioActividades + promedioPracticas + promedioParciales + notaExamenFinal;
+    let divisor = 4;
+    let formulaTexto = "(Actividades + Prácticas + Parciales + Examen Final) ÷ 4";
+    
+    if (proyectos.length > 0) {
+      sumaPromedios += promedioProyectos;
+      divisor = 5;
+      formulaTexto = "(Actividades + Prácticas + Parciales + Examen Final + Proyectos) ÷ 5";
+    }
+    
+    const promedioFinal = sumaPromedios / divisor;
+    
+    return {
+      promedioActividades,
+      promedioPracticas,
+      promedioParciales,
+      notaExamenFinal,
+      promedioProyectos,
+      promedioFinal,
+      cantidadActividades: actividades.length,
+      cantidadPracticas: practicas.length,
+      cantidadParciales: parciales.length,
+      tieneExamenFinal: !!examenFinal,
+      cantidadProyectos: proyectos.length,
+      formulaTexto
+    };
   };
 
   const filteredAlumnos = alumnos.filter(alumno => {
@@ -354,6 +402,9 @@ ${response.instructions}
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-12">
+                      
+                    </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Alumno
                     </th>
@@ -364,16 +415,7 @@ ${response.instructions}
                       Ciclo
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Nota
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Tipo de Evaluación
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Fecha
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Estado
+                      Notas Registradas
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Acciones
@@ -383,26 +425,87 @@ ${response.instructions}
                 <tbody className="bg-white divide-y divide-gray-200">
                   {filteredAlumnos.map((alumno) => {
                     const notasAlumno = getNotasForAlumno(alumno.id);
+                    const isExpanded = expandedAlumnos.has(alumno.id);
+                    
                     return (
                       <React.Fragment key={alumno.id}>
-                        {notasAlumno.length > 0 ? (
-                          <>
-                            {notasAlumno.map((nota, index) => (
-                              <tr key={`${alumno.id}-${nota.id}`} className="hover:bg-gray-50">
-                                {index === 0 && (
-                                  <>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900" rowSpan={notasAlumno.length + 1}>
+                        {/* Fila principal del alumno */}
+                        <tr className="hover:bg-gray-50 border-b-2 border-gray-200">
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <button
+                              onClick={() => toggleAlumnoExpansion(alumno.id)}
+                              className="text-gray-600 hover:text-gray-900 focus:outline-none"
+                              title={isExpanded ? "Ocultar notas" : "Ver notas"}
+                            >
+                              {isExpanded ? (
+                                <ChevronDown className="h-5 w-5" />
+                              ) : (
+                                <ChevronRight className="h-5 w-5" />
+                              )}
+                            </button>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                                       {alumno.nombre_completo}
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500" rowSpan={notasAlumno.length + 1}>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                                       {alumno.dni}
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500" rowSpan={notasAlumno.length + 1}>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                                       {alumno.ciclo}
                                     </td>
-                                  </>
-                                )}
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                            {notasAlumno.length > 0 ? (
+                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                {notasAlumno.length} {notasAlumno.length === 1 ? 'nota' : 'notas'}
+                              </span>
+                            ) : (
+                              <span className="text-gray-400">Sin notas</span>
+                            )}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                            <button
+                              onClick={() => {
+                                setFormData({
+                                  alumno_id: alumno.id,
+                                  asignatura_id: selectedAsignatura,
+                                  calificacion: '',
+                                  tipo_evaluacion: 'examen_final'
+                                });
+                                setShowModal(true);
+                              }}
+                              className="text-green-600 hover:text-green-900"
+                              title="Agregar nota"
+                            >
+                              <Plus className="h-5 w-5" />
+                            </button>
+                          </td>
+                        </tr>
+                        
+                        {/* Filas de notas (solo se muestran si está expandido) */}
+                        {isExpanded && notasAlumno.length > 0 && (
+                          <>
+                            <tr className="bg-gray-100">
+                              <td></td>
+                              <td className="px-6 py-2 text-xs font-semibold text-gray-700" colSpan="1">
+                                NOTA
+                              </td>
+                              <td className="px-6 py-2 text-xs font-semibold text-gray-700">
+                                TIPO DE EVALUACIÓN
+                              </td>
+                              <td className="px-6 py-2 text-xs font-semibold text-gray-700">
+                                FECHA
+                              </td>
+                              <td className="px-6 py-2 text-xs font-semibold text-gray-700">
+                                ESTADO
+                              </td>
+                              <td className="px-6 py-2 text-xs font-semibold text-gray-700">
+                                ACCIONES
+                              </td>
+                            </tr>
+                            {notasAlumno.map((nota) => (
+                              <tr key={`nota-${nota.id}`} className="bg-gray-50 hover:bg-gray-100">
+                                <td></td>
+                                <td className="px-6 py-3 whitespace-nowrap text-sm">
                                   <span className={`px-2 py-1 rounded-full text-xs font-medium ${
                                     nota.calificacion >= 13 ? 'bg-green-100 text-green-800' :
                                     nota.calificacion >= 10 ? 'bg-yellow-100 text-yellow-800' :
@@ -411,7 +514,7 @@ ${response.instructions}
                                     {nota.calificacion}
                                   </span>
                                 </td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                <td className="px-6 py-3 whitespace-nowrap text-sm">
                                   <span className={`px-2 py-1 rounded-full text-xs font-medium ${
                                     nota.tipo_nota === 'examen_final' ? 'bg-red-100 text-red-800' :
                                     nota.tipo_nota === 'examen_parcial' ? 'bg-orange-100 text-orange-800' :
@@ -437,10 +540,10 @@ ${response.instructions}
                                      nota.tipo_nota || 'Examen Final'}
                                   </span>
                                 </td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                <td className="px-6 py-3 whitespace-nowrap text-sm text-gray-500">
                                   {new Date(nota.fecha_registro).toLocaleDateString()}
                                 </td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                                <td className="px-6 py-3 whitespace-nowrap text-sm">
                                   {nota.publicada ? (
                                     <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
                                       Publicada
@@ -451,7 +554,7 @@ ${response.instructions}
                                     </span>
                                   )}
                                 </td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                                <td className="px-6 py-3 whitespace-nowrap text-sm font-medium">
                                   <div className="flex space-x-2">
                                     <button
                                       onClick={() => {
@@ -498,60 +601,138 @@ ${response.instructions}
                                 </td>
                               </tr>
                             ))}
-                            {/* Fila adicional con botón de envío de todas las notas */}
+                            
+                            {/* Fila de resumen de promedios */}
+                            {(() => {
+                              const promedios = calcularPromedios(notasAlumno);
+                              return (
+                                <>
+                                  <tr className="bg-gradient-to-r from-purple-50 to-indigo-50 border-t-2 border-purple-200">
+                                    <td></td>
+                                    <td className="px-6 py-4" colSpan="5">
+                                      <div className="space-y-3">
+                                        <h4 className="text-sm font-bold text-gray-800 mb-3 flex items-center">
+                                          📊 Resumen de Promedios
+                                        </h4>
+                                        
+                                        <div className="grid grid-cols-2 gap-3">
+                                          {/* Promedio de Actividades */}
+                                          <div className="bg-white rounded-lg p-3 shadow-sm border border-purple-100">
+                                            <div className="text-xs text-gray-600 mb-1">
+                                              📝 Actividades ({promedios.cantidadActividades})
+                                            </div>
+                                            <div className="text-lg font-bold text-purple-600">
+                                              {promedios.promedioActividades > 0 ? promedios.promedioActividades.toFixed(2) : '-'}
+                                            </div>
+                                          </div>
+                                          
+                                          {/* Promedio de Prácticas */}
+                                          <div className="bg-white rounded-lg p-3 shadow-sm border border-blue-100">
+                                            <div className="text-xs text-gray-600 mb-1">
+                                              🔬 Prácticas ({promedios.cantidadPracticas})
+                                            </div>
+                                            <div className="text-lg font-bold text-blue-600">
+                                              {promedios.promedioPracticas > 0 ? promedios.promedioPracticas.toFixed(2) : '-'}
+                                            </div>
+                                          </div>
+                                          
+                                          {/* Promedio de Parciales */}
+                                          <div className="bg-white rounded-lg p-3 shadow-sm border border-orange-100">
+                                            <div className="text-xs text-gray-600 mb-1">
+                                              📋 Parciales ({promedios.cantidadParciales})
+                                            </div>
+                                            <div className="text-lg font-bold text-orange-600">
+                                              {promedios.promedioParciales > 0 ? promedios.promedioParciales.toFixed(2) : '-'}
+                                            </div>
+                                          </div>
+                                          
+                                          {/* Examen Final */}
+                                          <div className="bg-white rounded-lg p-3 shadow-sm border border-red-100">
+                                            <div className="text-xs text-gray-600 mb-1">
+                                              📝 Examen Final
+                                            </div>
+                                            <div className="text-lg font-bold text-red-600">
+                                              {promedios.tieneExamenFinal ? promedios.notaExamenFinal.toFixed(2) : '-'}
+                                            </div>
+                                          </div>
+                                          
+                                          {/* Promedio de Proyectos */}
+                                          {promedios.cantidadProyectos > 0 && (
+                                            <div className="bg-white rounded-lg p-3 shadow-sm border border-indigo-100">
+                                              <div className="text-xs text-gray-600 mb-1">
+                                                🎯 Proyectos ({promedios.cantidadProyectos})
+                                              </div>
+                                              <div className="text-lg font-bold text-indigo-600">
+                                                {promedios.promedioProyectos.toFixed(2)}
+                                              </div>
+                                            </div>
+                                          )}
+                                        </div>
+                                        
+                                        {/* Promedio Final */}
+                                        <div className="bg-gradient-to-r from-green-100 to-emerald-100 rounded-lg p-4 shadow-md border-2 border-green-300 mt-3">
+                                          <div className="flex items-center justify-between">
+                                            <div>
+                                              <div className="text-sm font-semibold text-gray-700 mb-1">
+                                                🏆 PROMEDIO FINAL
+                                              </div>
+                                              <div className="text-xs text-gray-600">
+                                                {promedios.formulaTexto}
+                                              </div>
+                                            </div>
+                                            <div className={`text-3xl font-bold ${
+                                              promedios.promedioFinal >= 13 ? 'text-green-700' :
+                                              promedios.promedioFinal >= 10 ? 'text-yellow-700' :
+                                              'text-red-700'
+                                            }`}>
+                                              {promedios.promedioFinal > 0 ? promedios.promedioFinal.toFixed(2) : '-'}
+                                            </div>
+                                          </div>
+                                          {promedios.promedioFinal > 0 && (
+                                            <div className={`mt-2 text-xs font-semibold ${
+                                              promedios.promedioFinal >= 13 ? 'text-green-700' :
+                                              promedios.promedioFinal >= 10 ? 'text-yellow-700' :
+                                              'text-red-700'
+                                            }`}>
+                                              Estado: {promedios.promedioFinal >= 13 ? '✅ Aprobado' :
+                                                      promedios.promedioFinal >= 10 ? '⚠️ Recuperación' :
+                                                      '❌ Desaprobado'}
+                                            </div>
+                                          )}
+                                        </div>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                </>
+                              );
+                            })()}
+                            
+                            {/* Fila de notificación */}
                             <tr className="bg-blue-50 hover:bg-blue-100">
-                              <td className="px-6 py-3 text-sm font-medium text-blue-800" colSpan="5">
-                                📧 Enviar todas las notas por email
+                              <td></td>
+                              <td className="px-6 py-3 text-sm font-medium text-blue-800" colSpan="4">
+                                📧 Notificar al alumno que las notas están publicadas
                               </td>
                               <td className="px-6 py-3 text-sm font-medium">
                                 <button
                                   onClick={() => handleEnviarTodasLasNotas(alumno.id, alumno.nombre_completo)}
                                   className="flex items-center space-x-2 bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded-md text-xs font-medium transition-colors"
-                                  title="Enviar todas las notas por email"
+                                  title="Enviar notificación de notas publicadas"
                                 >
                                   <Mail className="h-3 w-3" />
-                                  <span>Enviar Email</span>
+                                  <span>Enviar Notificación</span>
                                 </button>
                               </td>
                             </tr>
                           </>
-                        ) : (
-                          <tr className="hover:bg-gray-50">
-                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                              {alumno.nombre_completo}
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                              {alumno.dni}
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                              {alumno.ciclo}
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                              <span className="text-gray-400">Sin nota</span>
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                              <span className="text-gray-400">-</span>
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                              <span className="text-gray-400">-</span>
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                              <div className="flex space-x-2">
-                                <button
-                                  onClick={() => {
-                                    setFormData({
-                                      alumno_id: alumno.id,
-                                      asignatura_id: selectedAsignatura,
-                                      calificacion: '',
-                                      tipo_evaluacion: 'examen_final'
-                                    });
-                                    setShowModal(true);
-                                  }}
-                                  className="text-green-600 hover:text-green-900"
-                                >
-                                  <Plus className="h-4 w-4" />
-                                </button>
-                              </div>
+                        )}
+                        
+                        {/* Mensaje si no hay notas y está expandido */}
+                        {isExpanded && notasAlumno.length === 0 && (
+                          <tr className="bg-gray-50">
+                            <td></td>
+                            <td className="px-6 py-4 text-sm text-gray-500 text-center" colSpan="5">
+                              Este alumno no tiene notas registradas. Haz clic en el botón + para agregar una nota.
                             </td>
                           </tr>
                         )}
