@@ -2,129 +2,151 @@
 
 Un sistema completo de gestión académica de notas con backend en Python (FastAPI) y frontend en React + TailwindCSS, con tres roles: Administrador, Docente y Alumno.
 
-## Características
+## 🚀 Inicio Rápido
 
-### Backend (FastAPI)
-- **Base de datos**: SQLite (fácil migración a PostgreSQL)
-- **Autenticación**: JWT con roles (admin, docente, alumno)
-- **API REST**: Documentación automática con Swagger
-- **Modelos**: Usuario, Alumno, Docente, Asignatura, Nota
-- **Validaciones**: DNI único, ciclo válido, notas entre 0-20
+### Opción 1: Instalación Manual (Recomendado para desarrollo)
 
-### Frontend (React + TailwindCSS)
-- **Diseño minimalista** con sidebar de navegación
-- **Responsive**: Adaptable a móviles y tablets
-- **Navegación por roles**: Menús específicos según el tipo de usuario
-- **Autenticación**: JWT con protección de rutas
-- **UI moderna**: Componentes con TailwindCSS y Lucide React
-
-## Estructura del Proyecto
-
-```
-sistema-notas/
-├── backend/
-│   ├── main.py                 # Aplicación principal FastAPI
-│   ├── database.py             # Configuración de base de datos
-│   ├── models.py               # Modelos SQLAlchemy
-│   ├── schemas.py              # Esquemas Pydantic
-│   ├── auth.py                 # Autenticación JWT
-│   ├── config.py               # Configuración
-│   ├── requirements.txt        # Dependencias Python
-│   └── routers/
-│       ├── __init__.py
-│       ├── auth.py             # Endpoints de autenticación
-│       ├── admin.py            # Endpoints de administrador
-│       ├── docente.py          # Endpoints de docente
-│       └── alumno.py           # Endpoints de alumno
-└── frontend/
-    ├── public/
-    │   └── index.html
-    ├── src/
-    │   ├── components/         # Componentes React
-    │   ├── pages/              # Páginas de la aplicación
-    │   ├── services/           # Servicios API
-    │   ├── contexts/           # Contextos React
-    │   ├── App.js
-    │   └── index.js
-    ├── package.json
-    ├── tailwind.config.js
-    └── postcss.config.js
-```
-
-## Instalación y Configuración
-
-### Prerrequisitos
+#### Prerrequisitos
 - Python 3.8+
 - Node.js 16+
 - npm o yarn
 
-### Backend
+#### Backend
 
-1. **Navegar al directorio del backend:**
+1. **Clonar el repositorio:**
+   ```bash
+   git clone <url-del-repositorio>
+   cd sisetmas-notas-react
+   ```
+
+2. **Configurar el backend:**
    ```bash
    cd backend
-   ```
-
-2. **Crear entorno virtual:**
-   ```bash
-   python -m venv venv
-   ```
-
-3. **Activar entorno virtual:**
-   ```bash
-   # Windows
-   venv\Scripts\activate
    
-   # macOS/Linux
+   # Crear entorno virtual
+   python -m venv venv
+   
+   # Activar entorno virtual
+   # Windows:
+   venv\Scripts\activate
+   # macOS/Linux:
    source venv/bin/activate
-   ```
-
-4. **Instalar dependencias:**
-   ```bash
+   
+   # Instalar dependencias
    pip install -r requirements.txt
    ```
 
-5. **Configurar variables de entorno:**
-   Crear archivo `.env` en el directorio backend:
-   ```env
-   SECRET_KEY=tu-clave-secreta-muy-segura-aqui-cambiar-en-produccion
-   DATABASE_URL=sqlite:///./sistema_notas.db
+3. **Configurar variables de entorno:**
+   ```bash
+   # Copiar archivo de ejemplo
+   cp env.example .env
+   
+   # Editar el archivo .env con tus valores
+   # Mínimo necesario: cambiar SECRET_KEY
    ```
 
-6. **Ejecutar la aplicación:**
+4. **Ejecutar el backend:**
    ```bash
    python main.py
    ```
-
+   
    El backend estará disponible en: `http://localhost:8000`
    - API Docs: `http://localhost:8000/docs`
    - ReDoc: `http://localhost:8000/redoc`
 
-### Frontend
+#### Frontend
 
-1. **Navegar al directorio del frontend:**
+1. **Configurar el frontend:**
    ```bash
    cd frontend
-   ```
-
-2. **Instalar dependencias:**
-   ```bash
+   
+   # Instalar dependencias
    npm install
    ```
 
-3. **Configurar variables de entorno:**
-   Crear archivo `.env` en el directorio frontend:
-   ```env
-   PORT=3001
-   REACT_APP_API_URL=http://localhost:8000
+2. **Configurar variables de entorno:**
+   ```bash
+   # Crear archivo .env en frontend/
+   echo "PORT=3001" > .env
+   echo "REACT_APP_API_URL=http://localhost:8000" >> .env
    ```
 
-4. **Ejecutar la aplicación:**
+3. **Ejecutar el frontend:**
    ```bash
    npm start
    ```
-
+   
    El frontend estará disponible en: `http://localhost:3001`
+
+### Opción 2: Docker (Recomendado para producción)
+
+```bash
+# Construir y ejecutar con Docker Compose
+docker-compose up --build
+
+# El sistema estará disponible en:
+# Frontend: http://localhost:3001
+# Backend: http://localhost:8000
+```
+
+## 📋 Configuración Detallada
+
+### Variables de Entorno del Backend
+
+Crea un archivo `.env` en `backend/` basado en `env.example`:
+
+```env
+# Configuración mínima para desarrollo
+SECRET_KEY=tu-clave-secreta-muy-segura-aqui-cambiar-en-produccion
+DATABASE_URL=sqlite:///../sistema_notas.db
+
+# Configuración de email (opcional)
+MAIL_USERNAME=tu-email@gmail.com
+MAIL_PASSWORD=tu-password-de-app-gmail
+MAIL_FROM=tu-email@gmail.com
+```
+
+> 📍 **Nota:** La base de datos `sistema_notas.db` se crea automáticamente en la raíz del proyecto cuando ejecutas el servidor.
+
+### Variables de Entorno del Frontend
+
+Crea un archivo `.env` en `frontend/`:
+
+```env
+PORT=3001
+REACT_APP_API_URL=http://localhost:8000
+```
+
+## 🔑 Credenciales de Acceso
+
+### Usuario Administrador
+- **Email:** `admin@sistema.com`
+- **Contraseña:** `admin123`
+
+### Usuarios de Prueba
+- **Docentes:** `juan.docente@sistema.com` / `maria.docente@sistema.com` (contraseña: `docente123`)
+- **Alumnos:** `carlos.alumno@sistema.com` / `ana.alumno@sistema.com` (contraseña: `alumno123`)
+
+> 📋 Ver archivo `CREDENCIALES.md` para la lista completa de usuarios
+
+## 🔧 Solución de Problemas Comunes
+
+### Error: "ModuleNotFoundError: No module named 'fastapi_mail'"
+**Solución:** Ejecuta `pip install -r requirements.txt` en el entorno virtual activado.
+
+### Error: "No module named 'dotenv'"
+**Solución:** Asegúrate de tener el archivo `.env` y ejecuta `pip install python-dotenv`.
+
+### Error de CORS en el frontend
+**Solución:** Verifica que `REACT_APP_API_URL` en el frontend coincida con la URL del backend.
+
+### Error de base de datos
+**Solución:** El archivo `sistema_notas.db` se crea automáticamente. Si hay problemas, elimínalo y reinicia el backend.
+
+### No puedo iniciar sesión
+**Solución:** Usa las credenciales del archivo `CREDENCIALES.md`. Si necesitas crear más usuarios, ejecuta `python create_admin.py` en el directorio backend.
+
+## 🏗️ Estructura del Proyecto
 
 ## Uso del Sistema
 

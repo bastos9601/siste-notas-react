@@ -6,8 +6,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# Configuración de la base de datos
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./sistema_notas.db")
+# Configuración de la base de datos - usando la base de datos de la raíz
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///../sistema_notas.db")
 
 engine = create_engine(
     DATABASE_URL,
