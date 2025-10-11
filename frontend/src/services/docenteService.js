@@ -45,6 +45,11 @@ export const docenteService = {
     return response.data;
   },
 
+  async publicarTodasNotas(asignaturaId) {
+    const response = await api.put(`/docente/asignaturas/${asignaturaId}/publicar-todas-notas`);
+    return response.data;
+  },
+
   async despublicarNota(notaId) {
     const response = await api.put(`/docente/notas/${notaId}/despublicar`);
     return response.data;
