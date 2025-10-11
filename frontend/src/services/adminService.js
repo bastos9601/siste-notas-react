@@ -31,6 +31,17 @@ export const adminService = {
     const response = await api.post(`/admin/alumnos/${id}/enviar-contrasena`);
     return response.data;
   },
+  
+  // Registrar siguiente ciclo (no matricular, solo actualizar campo ciclo)
+  async registrarSiguienteCicloAlumno(id) {
+    const response = await api.post(`/admin/alumnos/${id}/matricula-automatica`);
+    return response.data;
+  },
+
+  async registrarSiguienteCicloTodos() {
+    const response = await api.post(`/admin/matricula-automatica/todos`);
+    return response.data;
+  },
 
   // Gestión de Docentes
   async getDocentes() {
@@ -123,6 +134,12 @@ export const adminService = {
   // Mi Perfil
   async actualizarMiPerfil(perfilData) {
     const response = await api.put('/admin/mi-perfil', perfilData);
+    return response.data;
+  },
+
+  // Historial Académico
+  async getHistorialAcademicoAlumno(alumnoId) {
+    const response = await api.get(`/historial/alumnos/${alumnoId}/historial`);
     return response.data;
   }
 };

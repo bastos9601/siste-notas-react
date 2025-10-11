@@ -485,6 +485,57 @@ async def despublicar_nota(
         }
     }
 
+@router.put("/asignaturas/{asignatura_id}/publicar-todas-notas")
+async def publicar_todas_notas(
+    asignatura_id: int,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_role("docente"))
+):
+    """Publicar todas las notas de una asignatura específica"""
+    # Verificar que el docente tiene acceso a esta asignatura
+    docente = db.query(Docente).filter(Docente.usuario_id == current_user.id).first()
+    if not docente:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Docente no encontrado"
+        )
+    
+    # Verificar que la asignatura pertenece al docente
+    asignatura = db.query(Asignatura).filter(
+        Asignatura.id == asignatura_id,
+        Asignatura.docente_id == docente.id
+    ).first()
+    
+    if not asignatura:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Asignatura no encontrada o no tienes acceso a ella"
+        )
+    
+    # Obtener todas las notas no publicadas de la asignatura
+    notas_no_publicadas = db.query(Nota).filter(
+        Nota.asignatura_id == asignatura_id,
+        Nota.publicada == False
+    ).all()
+    
+    if not notas_no_publicadas:
+        return {
+            "message": "No hay notas pendientes por publicar en esta asignatura",
+            "notas_publicadas": 0
+        }
+    
+    # Publicar todas las notas
+    for nota in notas_no_publicadas:
+        nota.publicada = True
+    
+    db.commit()
+    
+    return {
+        "message": "Todas las notas han sido publicadas exitosamente",
+        "notas_publicadas": len(notas_no_publicadas),
+        "asignatura": asignatura.nombre
+    }
+
 @router.post("/asignaturas/{asignatura_id}/alumnos/{alumno_id}/enviar-notas")
 async def enviar_todas_las_notas(
     asignatura_id: int,

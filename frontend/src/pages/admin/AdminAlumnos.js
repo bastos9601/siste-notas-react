@@ -1,12 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Edit, Trash2, Search, Send, Calendar, Eye } from 'lucide-react';
+import { Plus, Edit, Trash2, Search, Send, Calendar, Eye, BookOpen } from 'lucide-react';
 import { adminService } from '../../services/adminService';
+import AdminHistorialAcademico from './AdminHistorialAcademico';
 
 const AdminAlumnos = () => {
   const [alumnos, setAlumnos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
+  const [showHistorialModal, setShowHistorialModal] = useState(false);
   const [editingAlumno, setEditingAlumno] = useState(null);
+  const [selectedAlumnoHistorial, setSelectedAlumnoHistorial] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCiclo, setSelectedCiclo] = useState(null);
   const [formData, setFormData] = useState({
@@ -114,6 +117,21 @@ ${response.instructions}
       console.error('Error al enviar contraseña:', error);
       const errorMessage = error.response?.data?.detail || 'Error al enviar la contraseña. Inténtalo de nuevo.';
       alert(`❌ Error: ${errorMessage}`);
+    }
+  };
+
+  const handleRegistrarSiguienteCiclo = async (alumnoId, alumnoNombre) => {
+    try {
+      if (!window.confirm(`¿Deseas registrar a ${alumnoNombre} en el siguiente ciclo (si corresponde)?`)) return;
+      const response = await adminService.registrarSiguienteCicloAlumno(alumnoId);
+      // Mostrar mensaje devuelto
+      alert(response.mensaje || 'Operación completada');
+      // Recargar la lista de alumnos para reflejar el cambio de ciclo
+      loadAlumnos();
+    } catch (error) {
+      console.error('Error al registrar siguiente ciclo:', error);
+      const errorMessage = error.response?.data?.detail || 'Error al registrar el siguiente ciclo. Inténtalo de nuevo.';
+      alert(errorMessage);
     }
   };
 
@@ -283,6 +301,23 @@ ${response.instructions}
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                         <div className="flex space-x-2">
                           <button
+                            onClick={() => handleRegistrarSiguienteCiclo(alumno.id, alumno.nombre_completo)}
+                            className="text-indigo-600 hover:text-indigo-900"
+                            title="Registrar siguiente ciclo"
+                          >
+                            →
+                          </button>
+                          <button
+                            onClick={() => {
+                              setSelectedAlumnoHistorial(alumno);
+                              setShowHistorialModal(true);
+                            }}
+                            className="text-blue-600 hover:text-blue-900"
+                            title="Ver historial académico"
+                          >
+                            <BookOpen className="h-4 w-4" />
+                          </button>
+                          <button
                             onClick={() => {
                               setEditingAlumno(alumno);
                               setFormData({
@@ -447,6 +482,14 @@ ${response.instructions}
             </div>
           </div>
         </div>
+      )}
+
+      {/* Modal para ver historial académico */}
+      {showHistorialModal && selectedAlumnoHistorial && (
+        <AdminHistorialAcademico 
+          alumno={selectedAlumnoHistorial} 
+          onClose={() => setShowHistorialModal(false)} 
+        />
       )}
     </div>
   );

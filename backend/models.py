@@ -34,6 +34,43 @@ class Alumno(Base):
     usuario = relationship("Usuario", back_populates="alumno")
     notas = relationship("Nota", back_populates="alumno")
     asignaturas_matriculadas = relationship("Asignatura", secondary="matriculas", overlaps="alumnos_matriculados")
+    historiales = relationship("HistorialAcademico", back_populates="alumno")
+
+class HistorialAcademico(Base):
+    __tablename__ = "historiales_academicos"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    alumno_id = Column(Integer, ForeignKey("alumnos.id"), nullable=False)
+    ciclo = Column(String(50), nullable=False)
+    fecha_registro = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relaciones
+    alumno = relationship("Alumno", back_populates="historiales")
+    asignaturas = relationship("AsignaturaHistorial", back_populates="historial")
+
+class AsignaturaHistorial(Base):
+    __tablename__ = "asignaturas_historial"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    historial_id = Column(Integer, ForeignKey("historiales_academicos.id"), nullable=False)
+    nombre = Column(String(200), nullable=False)
+    promedio = Column(Float, nullable=False)
+    
+    # Relaciones
+    historial = relationship("HistorialAcademico", back_populates="asignaturas")
+    notas = relationship("NotaHistorial", back_populates="asignatura")
+
+class NotaHistorial(Base):
+    __tablename__ = "notas_historial"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    asignatura_id = Column(Integer, ForeignKey("asignaturas_historial.id"), nullable=False)
+    calificacion = Column(Float, nullable=False)
+    tipo_nota = Column(String(50), nullable=False)
+    fecha_registro = Column(DateTime(timezone=True), nullable=False)
+    
+    # Relaciones
+    asignatura = relationship("AsignaturaHistorial", back_populates="notas")
 
 class Docente(Base):
     __tablename__ = "docentes"

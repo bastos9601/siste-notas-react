@@ -2,14 +2,14 @@ import api from './api';
 
 export const alumnoService = {
   // Asignaturas del alumno
-  async getMisAsignaturas() {
-    const response = await api.get('/alumno/mis-asignaturas');
+  async getMisAsignaturas(soloCicloActual = true) {
+    const response = await api.get(`/alumno/mis-asignaturas?solo_ciclo_actual=${soloCicloActual}`);
     return response.data;
   },
 
   // Notas del alumno
-  async getMisNotas() {
-    const response = await api.get('/alumno/mis-notas');
+  async getMisNotas(soloCicloActual = true) {
+    const response = await api.get(`/alumno/mis-notas?solo_ciclo_actual=${soloCicloActual}`);
     return response.data;
   },
 
@@ -24,8 +24,8 @@ export const alumnoService = {
     return response.data;
   },
 
-  async getPromedioPorAsignatura() {
-    const response = await api.get('/alumno/promedio-por-asignatura');
+  async getPromedioPorAsignatura(soloCicloActual = true) {
+    const response = await api.get(`/alumno/promedio-por-asignatura?solo_ciclo_actual=${soloCicloActual}`);
     return response.data;
   },
 
@@ -37,6 +37,12 @@ export const alumnoService = {
 
   async cambiarContrasena(contrasenaData) {
     const response = await api.put('/alumno/cambiar-contrasena', contrasenaData);
+    return response.data;
+  },
+
+  // Historial académico
+  async getHistorialAcademico() {
+    const response = await api.get('/historial/alumnos/me/historial');
     return response.data;
   }
 };
