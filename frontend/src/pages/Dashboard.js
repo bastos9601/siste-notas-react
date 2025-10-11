@@ -254,6 +254,9 @@ const Dashboard = () => {
               <a href="/alumno/notas" className="btn-primary text-center">
                 Ver Mis Notas
               </a>
+              <a href="/alumno/historial" className="btn-primary text-center">
+                Ver Mi Historial Académico
+              </a>
             </>
           )}
         </div>

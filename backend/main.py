@@ -1,9 +1,16 @@
 from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from routers import auth, admin, docente, alumno
+from routers import auth, admin, docente, alumno, historial
 from database import engine, Base, get_db
 from models import Usuario
 from sqlalchemy.orm import Session
+import os
+
+# Asegurar que estamos en el directorio correcto
+backend_dir = os.path.dirname(os.path.abspath(__file__))
+os.chdir(backend_dir)
+print(f"Directorio de trabajo actual: {os.getcwd()}")
+print(f"Usando la base de datos en: {os.path.join(backend_dir, 'sistema_notas.db')}")
 
 # Crear las tablas
 Base.metadata.create_all(bind=engine)
@@ -37,6 +44,7 @@ app.include_router(auth.router, prefix="/auth", tags=["autenticación"])
 app.include_router(admin.router, prefix="/admin", tags=["administrador"])
 app.include_router(docente.router, prefix="/docente", tags=["docente"])
 app.include_router(alumno.router, prefix="/alumno", tags=["alumno"])
+app.include_router(historial.router, prefix="/historial", tags=["historial académico"])
 
 @app.get("/")
 async def root():
@@ -118,6 +126,24 @@ async def debug_users_detailed(db: Session = Depends(get_db)):
             for user in users
         ]
     }
+
+
+@app.get("/debug/routes")
+async def debug_routes():
+    """Devuelve la lista de rutas registradas y sus métodos (útil para depuración)."""
+    routes = []
+    for route in app.router.routes:
+        try:
+            methods = list(route.methods) if hasattr(route, 'methods') and route.methods else []
+            path = getattr(route, 'path', None) or getattr(route, 'rule', None)
+            routes.append({
+                'path': path,
+                'name': getattr(route, 'name', None),
+                'methods': methods
+            })
+        except Exception:
+            continue
+    return {"count": len(routes), "routes": routes}
 
 if __name__ == "__main__":
     import uvicorn

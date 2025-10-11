@@ -3,6 +3,88 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { Plus, Edit, Trash2, Search, BookOpen, ArrowLeft, Send, EyeOff, Calendar, Mail, ChevronDown, ChevronRight } from 'lucide-react';
 import { docenteService } from '../../services/docenteService';
 
+// Componente para mostrar asignaturas agrupadas por ciclo
+const CiclosAsignaturas = ({ asignaturas, selectedAsignatura, setSelectedAsignatura }) => {
+  // Estado para controlar qué ciclos están expandidos
+  const [expandedCiclos, setExpandedCiclos] = useState({});
+  
+  // Inicializar todos los ciclos como expandidos al cargar el componente
+  useEffect(() => {
+    const ciclos = [...new Set(asignaturas.map(a => a.ciclo))];
+    const initialExpanded = {};
+    ciclos.forEach(ciclo => {
+      initialExpanded[ciclo] = true;
+    });
+    setExpandedCiclos(initialExpanded);
+  }, [asignaturas]);
+  
+  // Obtener ciclos únicos y ordenarlos
+  const ciclos = [...new Set(asignaturas.map(a => a.ciclo))].sort();
+  
+  // Función para alternar la expansión de un ciclo
+  const toggleCiclo = (ciclo) => {
+    setExpandedCiclos(prev => ({
+      ...prev,
+      [ciclo]: !prev[ciclo]
+    }));
+  };
+  
+  return (
+    <>
+      {ciclos.map(ciclo => {
+        // Filtrar asignaturas por ciclo
+        const asignaturasCiclo = asignaturas.filter(a => a.ciclo === ciclo);
+        const isExpanded = expandedCiclos[ciclo];
+        
+        return (
+          <div key={`ciclo-${ciclo}`} className="mb-6">
+            {/* Tarjeta de ciclo */}
+            <div 
+              className="flex items-center justify-between p-4 bg-gray-100 rounded-lg shadow-sm cursor-pointer mb-3"
+              onClick={() => toggleCiclo(ciclo)}
+            >
+              <div className="flex items-center">
+                <Calendar className="h-5 w-5 text-primary-600 mr-2" />
+                <h3 className="text-lg font-medium text-gray-900">Ciclo {ciclo}</h3>
+              </div>
+              <div>
+                {isExpanded ? 
+                  <ChevronDown className="h-5 w-5 text-gray-500" /> : 
+                  <ChevronRight className="h-5 w-5 text-gray-500" />
+                }
+              </div>
+            </div>
+            
+            {/* Asignaturas del ciclo (solo se muestran si está expandido) */}
+            {isExpanded && (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 pl-4">
+                {asignaturasCiclo.map((asignatura) => (
+                  <button
+                    key={asignatura.id}
+                    onClick={() => setSelectedAsignatura(asignatura.id)}
+                    className={`p-4 rounded-lg border-2 text-left transition-colors ${
+                      selectedAsignatura === asignatura.id
+                        ? 'border-primary-500 bg-primary-50'
+                        : 'border-gray-200 hover:border-gray-300'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center">
+                        <BookOpen className="h-5 w-5 text-primary-600 mr-3" />
+                        <span className="font-medium text-gray-900">{asignatura.nombre}</span>
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </>
+  );
+};
+
 const DocenteNotas = () => {
   const { asignaturaId, alumnoId } = useParams();
   const navigate = useNavigate();
@@ -122,6 +204,32 @@ const DocenteNotas = () => {
       } catch (error) {
         console.error('Error al publicar nota:', error);
         const errorMessage = error.response?.data?.detail || 'Error al publicar la nota. Inténtalo de nuevo.';
+        alert(`❌ Error: ${errorMessage}`);
+      }
+    }
+  };
+
+  const handlePublicarTodasNotas = async () => {
+    if (!selectedAsignatura) {
+      alert('Por favor, selecciona una asignatura primero');
+      return;
+    }
+    
+    if (window.confirm(`¿Deseas publicar TODAS las notas de esta asignatura? Los alumnos podrán verlas inmediatamente.`)) {
+      try {
+        const response = await docenteService.publicarTodasNotas(selectedAsignatura);
+        
+        // Recargar datos después de publicar todas
+        await loadAlumnosYNotas(selectedAsignatura);
+        
+        if (response.notas_publicadas > 0) {
+          alert(`✅ ${response.message}\n\nSe han publicado ${response.notas_publicadas} notas en la asignatura ${response.asignatura}.`);
+        } else {
+          alert(`ℹ️ ${response.message}`);
+        }
+      } catch (error) {
+        console.error('Error al publicar todas las notas:', error);
+        const errorMessage = error.response?.data?.detail || 'Error al publicar las notas. Inténtalo de nuevo.';
         alert(`❌ Error: ${errorMessage}`);
       }
     }
@@ -329,51 +437,44 @@ ${response.instructions}`;
         <div className="flex items-center space-x-4">
           <h1 className="text-2xl font-bold text-gray-900">Gestión de Notas</h1>
           {selectedAsignatura && (
-            <button
-              onClick={() => {
-                setFormData({
-                  ...formData,
-                  asignatura_id: selectedAsignatura
-                });
-                setShowModal(true);
-              }}
-              className="btn-primary flex items-center"
-            >
-              <Plus className="h-4 w-4 mr-2" />
-              Nueva Nota
-            </button>
+            <div className="flex space-x-2">
+              <button
+                onClick={handlePublicarTodasNotas}
+                className="btn-success flex items-center"
+                title="Publicar todas las notas de esta asignatura"
+              >
+                <Send className="h-4 w-4 mr-1" />
+                Publicar Todas
+              </button>
+              <button
+                onClick={() => {
+                  setFormData({
+                    ...formData,
+                    asignatura_id: selectedAsignatura
+                  });
+                  setShowModal(true);
+                }}
+                className="btn-primary flex items-center"
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                Nueva Nota
+              </button>
+            </div>
           )}
         </div>
       </div>
 
-      {/* Selector de asignatura */}
+      {/* Selector de asignatura agrupado por ciclos */}
       {!asignaturaId && (
         <div className="card">
           <h2 className="text-lg font-semibold text-gray-900 mb-4">Seleccionar Asignatura</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {asignaturas.map((asignatura) => (
-              <button
-                key={asignatura.id}
-                onClick={() => setSelectedAsignatura(asignatura.id)}
-                className={`p-4 rounded-lg border-2 text-left transition-colors ${
-                  selectedAsignatura === asignatura.id
-                    ? 'border-primary-500 bg-primary-50'
-                    : 'border-gray-200 hover:border-gray-300'
-                }`}
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center">
-                    <BookOpen className="h-5 w-5 text-primary-600 mr-3" />
-                    <span className="font-medium text-gray-900">{asignatura.nombre}</span>
-                  </div>
-                  <div className="flex items-center text-sm text-gray-500">
-                    <Calendar className="h-4 w-4 mr-1" />
-                    <span>Ciclo {asignatura.ciclo}</span>
-                  </div>
-                </div>
-              </button>
-            ))}
-          </div>
+          
+          {/* Agrupamos las asignaturas por ciclo */}
+          <CiclosAsignaturas 
+            asignaturas={asignaturas} 
+            selectedAsignatura={selectedAsignatura}
+            setSelectedAsignatura={setSelectedAsignatura}
+          />
         </div>
       )}
 

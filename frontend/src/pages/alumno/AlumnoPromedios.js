@@ -16,8 +16,8 @@ const AlumnoPromedios = () => {
     try {
       const [promedioData, promediosAsignaturaData, notasData] = await Promise.all([
         alumnoService.getMiPromedio(),
-        alumnoService.getPromedioPorAsignatura(),
-        alumnoService.getMisNotas()
+        alumnoService.getPromedioPorAsignatura(true), // Solo ciclo actual
+        alumnoService.getMisNotas(true) // Solo ciclo actual
       ]);
       
       setPromedioGeneral(promedioData);

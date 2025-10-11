@@ -12,6 +12,7 @@ import AdminAsignaturas from './pages/admin/AdminAsignaturas';
 import AdminMatriculas from './pages/admin/AdminMatriculas';
 import AdminNotas from './pages/admin/AdminNotas';
 import AdminPerfil from './pages/admin/AdminPerfil';
+import AdminHistorial from './pages/admin/AdminHistorial';
 import DocenteAsignaturas from './pages/docente/DocenteAsignaturas';
 import DocenteNotas from './pages/docente/DocenteNotas';
 import DocenteAlumnos from './pages/docente/DocenteAlumnos';
@@ -21,6 +22,7 @@ import AlumnoAsignaturas from './pages/alumno/AlumnoAsignaturas';
 import AlumnoNotas from './pages/alumno/AlumnoNotas';
 import AlumnoPromedios from './pages/alumno/AlumnoPromedios';
 import AlumnoPerfil from './pages/alumno/AlumnoPerfil';
+import AlumnoHistorial from './pages/alumno/AlumnoHistorial';
 
 function App() {
   return (
@@ -66,6 +68,11 @@ function App() {
               <Route path="admin/perfil" element={
                 <ProtectedRoute allowedRoles={['admin']}>
                   <AdminPerfil />
+                </ProtectedRoute>
+              } />
+              <Route path="admin/historial" element={
+                <ProtectedRoute allowedRoles={['admin']}>
+                  <AdminHistorial />
                 </ProtectedRoute>
               } />
               
@@ -130,6 +137,11 @@ function App() {
               <Route path="alumno/perfil" element={
                 <ProtectedRoute allowedRoles={['alumno']}>
                   <AlumnoPerfil />
+                </ProtectedRoute>
+              } />
+              <Route path="alumno/historial" element={
+                <ProtectedRoute allowedRoles={['alumno']}>
+                  <AlumnoHistorial />
                 </ProtectedRoute>
               } />
             </Route>

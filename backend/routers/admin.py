@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session, joinedload
 from typing import List
 from database import get_db
-from models import Usuario, Alumno, Docente, Asignatura, Nota, matriculas
+from models import Usuario, Alumno, Docente, Asignatura, Nota, matriculas, HistorialAcademico, AsignaturaHistorial, NotaHistorial
 from schemas import (
     AlumnoCreate, AlumnoUpdate, Alumno as AlumnoSchema,
     DocenteCreate, Docente as DocenteSchema,
@@ -10,8 +10,192 @@ from schemas import (
     MatriculaCreate, Matricula
 )
 from auth import require_role, get_password_hash, verify_password
+from fastapi import BackgroundTasks
+from sqlalchemy.orm import Session
+import os
+import re
+from sqlalchemy import func
+
+# Reutilizaremos la misma regla de nota mínima que en el router de alumno
+PASSING_GRADE = int(os.getenv("PASSING_GRADE", "11"))
 
 router = APIRouter()
+
+
+def get_next_cycle(ciclo: str) -> str:
+    text = str(ciclo).strip()
+    m = re.search(r"(\d+)(?!.*\d)", text)
+    if m:
+        current = int(m.group(1))
+        next_cycle = current + 1
+        next_ciclo_str = re.sub(r"(\d+)(?!.*\d)", str(next_cycle), text, count=1)
+        return next_ciclo_str
+
+    roman_map = {
+        'I': 1, 'II': 2, 'III': 3, 'IV': 4, 'V': 5,
+        'VI': 6, 'VII': 7, 'VIII': 8, 'IX': 9, 'X': 10
+    }
+    m2 = re.search(r"\b(I|II|III|IV|V|VI|VII|VIII|IX|X)\b", text, flags=re.IGNORECASE)
+    if m2:
+        roman = m2.group(1).upper()
+        current = roman_map.get(roman)
+        if not current:
+            raise ValueError("No se pudo determinar el siguiente ciclo (roman not supported)")
+        next_num = current + 1
+        inv_map = {v: k for k, v in roman_map.items()}
+        next_roman = inv_map.get(next_num, str(next_num))
+        next_ciclo_str = re.sub(r"\b(I|II|III|IV|V|VI|VII|VIII|IX|X)\b", next_roman, text, count=1, flags=re.IGNORECASE)
+        return next_ciclo_str
+
+    raise ValueError("No se pudo determinar el siguiente ciclo a partir del valor de 'ciclo'.")
+
+
+def alumno_aprobo_asignatura(db: Session, alumno_id: int, asignatura_id: int) -> bool:
+    notas = db.query(Nota).filter(
+        Nota.alumno_id == alumno_id,
+        Nota.asignatura_id == asignatura_id,
+        Nota.publicada == True
+    ).all()
+    if not notas:
+        return False
+    return max(n.calificacion for n in notas) >= PASSING_GRADE
+
+
+def matricular_alumno_en_siguiente_ciclo(db: Session, alumno: Alumno) -> dict:
+    resultado = {"alumno_id": alumno.id, "nombre": alumno.nombre_completo, "matriculado": False, "mensaje": ""}
+    try:
+        next_ciclo = get_next_cycle(alumno.ciclo)
+    except ValueError as e:
+        resultado["mensaje"] = str(e)
+        return resultado
+
+    # Guardar el ciclo actual antes de cambiarlo
+    ciclo_actual = alumno.ciclo
+
+    matriculas_data = db.execute(
+        matriculas.select().where(matriculas.c.alumno_id == alumno.id)
+    ).fetchall()
+
+    asignaturas_actuales_ids = [m.asignatura_id for m in matriculas_data]
+    asignaturas_actuales = db.query(Asignatura).filter(Asignatura.id.in_(asignaturas_actuales_ids), Asignatura.ciclo == ciclo_actual).all()
+
+    if not asignaturas_actuales:
+        resultado["mensaje"] = "No se encontraron asignaturas del ciclo actual para evaluar."
+        return resultado
+
+    for asign in asignaturas_actuales:
+        if not alumno_aprobo_asignatura(db, alumno.id, asign.id):
+            resultado["mensaje"] = f"No aprobó la asignatura: {asign.nombre} (id={asign.id})."
+            return resultado
+
+    # Crear historial académico para el ciclo actual antes de avanzar al siguiente
+    historial = HistorialAcademico(
+        alumno_id=alumno.id,
+        ciclo=ciclo_actual
+    )
+    db.add(historial)
+    db.flush()  # Para obtener el ID del historial
+    
+    # Agregar asignaturas al historial
+    for asignatura in asignaturas_actuales:
+        # Calcular promedio de notas para esta asignatura
+        promedio_query = db.query(func.avg(Nota.calificacion)).filter(
+            Nota.alumno_id == alumno.id,
+            Nota.asignatura_id == asignatura.id
+        ).scalar()
+        
+        promedio = promedio_query if promedio_query else 0.0
+        
+        # Crear asignatura en historial
+        asignatura_historial = AsignaturaHistorial(
+            historial_id=historial.id,
+            nombre=asignatura.nombre,
+            promedio=promedio
+        )
+        db.add(asignatura_historial)
+        db.flush()
+        
+        # Obtener notas de esta asignatura
+        notas = db.query(Nota).filter(
+            Nota.alumno_id == alumno.id,
+            Nota.asignatura_id == asignatura.id
+        ).all()
+        
+        # Guardar notas en historial
+        for nota in notas:
+            nota_historial = NotaHistorial(
+                asignatura_id=asignatura_historial.id,
+                calificacion=nota.calificacion,
+                tipo_nota=nota.tipo_nota,
+                fecha_registro=nota.fecha_registro
+            )
+            db.add(nota_historial)
+    
+    # Agregar la asignatura "Cultura" al historial si el alumno está pasando del ciclo I al II
+    if ciclo_actual == "I" and next_ciclo == "II":
+        asignatura_cultura = AsignaturaHistorial(
+            historial_id=historial.id,
+            nombre="Cultura",
+            promedio=15.0  # Promedio predeterminado
+        )
+        db.add(asignatura_cultura)
+        db.flush()
+        
+        # Agregar una nota para la asignatura Cultura
+        nota_cultura = NotaHistorial(
+            asignatura_id=asignatura_cultura.id,
+            calificacion=15.0,
+            tipo_nota="Promedio Final",
+            fecha_registro=func.now()
+        )
+        db.add(nota_cultura)
+
+    asignaturas_siguiente = db.query(Asignatura).filter(Asignatura.ciclo == next_ciclo).all()
+
+    # Actualizar solo el campo ciclo del alumno (registrar avance de ciclo)
+    alumno.ciclo = next_ciclo
+    db.commit()
+
+    asignaturas_siguiente_ids = [a.id for a in asignaturas_siguiente]
+    resultado["matriculado"] = False
+    resultado["registrado"] = True
+    resultado["asignaturas_siguiente_ids"] = asignaturas_siguiente_ids
+    if asignaturas_siguiente_ids:
+        resultado["mensaje"] = f"Registrado en el siguiente ciclo ({next_ciclo}). Existen {len(asignaturas_siguiente_ids)} asignaturas disponibles en ese ciclo. Se ha generado el historial académico."
+    else:
+        resultado["mensaje"] = f"Registrado en el siguiente ciclo ({next_ciclo}). No hay asignaturas definidas para ese ciclo. Se ha generado el historial académico."
+
+    return resultado
+
+
+@router.post("/alumnos/{alumno_id}/matricula-automatica")
+async def admin_matricula_automatica_alumno(
+    alumno_id: int,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_role("admin"))
+):
+    """Endpoint admin para forzar la matrícula automática de un alumno por su ID."""
+    alumno = db.query(Alumno).filter(Alumno.id == alumno_id).first()
+    if not alumno:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Alumno no encontrado")
+    resultado = matricular_alumno_en_siguiente_ciclo(db, alumno)
+    return resultado
+
+
+@router.post("/matricula-automatica/todos")
+async def admin_matricula_automatica_todos(
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_role("admin"))
+):
+    """Endpoint admin para procesar matrícula automática de todos los alumnos.
+    Retorna un reporte con los resultados por alumno.
+    """
+    alumnos = db.query(Alumno).all()
+    reporte = []
+    for alumno in alumnos:
+        reporte.append(matricular_alumno_en_siguiente_ciclo(db, alumno))
+    return reporte
+
 
 # ========== GESTIÓN DE ALUMNOS ==========
 
@@ -143,7 +327,7 @@ async def eliminar_alumno(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(require_role("admin"))
 ):
-    """Eliminar alumno"""
+    """Eliminar alumno completamente, incluyendo su historial académico"""
     # Buscar el alumno
     db_alumno = db.query(Alumno).filter(Alumno.id == alumno_id).first()
     if not db_alumno:
@@ -152,27 +336,52 @@ async def eliminar_alumno(
             detail="Alumno no encontrado"
         )
     
-    # Eliminar en cascada: primero las notas, luego las matrículas
-    # Eliminar todas las notas del alumno
-    db.query(Nota).filter(Nota.alumno_id == alumno_id).delete()
-    
-    # Eliminar todas las matrículas del alumno
-    db.execute(
-        matriculas.delete().where(matriculas.c.alumno_id == alumno_id)
-    )
-    
-    # Eliminar el usuario asociado primero
-    usuario_id = db_alumno.usuario_id
-    db.delete(db_alumno)
-    db.commit()
-    
-    # Eliminar el usuario
-    db_usuario = db.query(Usuario).filter(Usuario.id == usuario_id).first()
-    if db_usuario:
-        db.delete(db_usuario)
+    try:
+        # Eliminar historial académico completo
+        # 1. Primero eliminar las notas del historial
+        historiales = db.query(HistorialAcademico).filter(HistorialAcademico.alumno_id == alumno_id).all()
+        for historial in historiales:
+            # Obtener todas las asignaturas del historial
+            asignaturas_historial = db.query(AsignaturaHistorial).filter(AsignaturaHistorial.historial_id == historial.id).all()
+            for asignatura in asignaturas_historial:
+                # Eliminar todas las notas de la asignatura en el historial
+                db.query(NotaHistorial).filter(NotaHistorial.asignatura_id == asignatura.id).delete()
+            
+            # Eliminar todas las asignaturas del historial
+            db.query(AsignaturaHistorial).filter(AsignaturaHistorial.historial_id == historial.id).delete()
+        
+        # Eliminar todos los registros de historial académico
+        db.query(HistorialAcademico).filter(HistorialAcademico.alumno_id == alumno_id).delete()
+        
+        # Eliminar todas las notas del alumno
+        db.query(Nota).filter(Nota.alumno_id == alumno_id).delete()
+        
+        # Eliminar todas las matrículas del alumno
+        db.execute(
+            matriculas.delete().where(matriculas.c.alumno_id == alumno_id)
+        )
+        
+        # Guardar el ID del usuario para eliminarlo después
+        usuario_id = db_alumno.usuario_id
+        
+        # Eliminar el alumno
+        db.delete(db_alumno)
         db.commit()
+        
+        # Eliminar el usuario asociado
+        db_usuario = db.query(Usuario).filter(Usuario.id == usuario_id).first()
+        if db_usuario:
+            db.delete(db_usuario)
+            db.commit()
+        
+        return {"message": "Alumno eliminado completamente junto con todo su historial académico, notas y matrículas"}
     
-    return {"message": "Alumno eliminado correctamente junto con sus notas y matrículas"}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al eliminar el alumno: {str(e)}"
+        )
 
 @router.get("/alumnos")
 async def listar_alumnos(
@@ -393,13 +602,13 @@ async def eliminar_docente(
 
 # ========== GESTIÓN DE ASIGNATURAS ==========
 
-@router.post("/asignaturas", response_model=AsignaturaSchema)
+@router.post("/asignaturas", response_model=dict)
 async def crear_asignatura(
     asignatura_data: AsignaturaCreate,
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(require_role("admin"))
 ):
-    """Crear nueva asignatura"""
+    """Crear nueva asignatura y matricular automáticamente a los alumnos del ciclo correspondiente"""
     # Verificar que el docente existe
     docente = db.query(Docente).filter(Docente.id == asignatura_data.docente_id).first()
     if not docente:
@@ -422,7 +631,55 @@ async def crear_asignatura(
     # Recargar con la relación del docente
     db_asignatura = db.query(Asignatura).options(joinedload(Asignatura.docente)).filter(Asignatura.id == db_asignatura.id).first()
     
-    return db_asignatura
+    # Matricular automáticamente a todos los alumnos del ciclo correspondiente
+    alumnos_ciclo = db.query(Alumno).filter(Alumno.ciclo == asignatura_data.ciclo).all()
+    matriculas_creadas = []
+    
+    for alumno in alumnos_ciclo:
+        # Verificar si ya está matriculado en esta asignatura
+        existing_matricula = db.execute(
+            matriculas.select().where(
+                matriculas.c.alumno_id == alumno.id,
+                matriculas.c.asignatura_id == db_asignatura.id
+            )
+        ).first()
+        
+        # Si no está matriculado, crear la matrícula
+        if not existing_matricula:
+            db.execute(
+                matriculas.insert().values(
+                    alumno_id=alumno.id,
+                    asignatura_id=db_asignatura.id
+                )
+            )
+            matriculas_creadas.append({
+                "alumno_id": alumno.id,
+                "alumno_nombre": alumno.nombre_completo,
+                "asignatura_id": db_asignatura.id
+            })
+    
+    # Confirmar los cambios en la base de datos
+    db.commit()
+    
+    return {
+        "asignatura": {
+            "id": db_asignatura.id,
+            "nombre": db_asignatura.nombre,
+            "ciclo": db_asignatura.ciclo,
+            "docente_id": db_asignatura.docente_id,
+            "docente": {
+                "id": docente.id,
+                "nombre_completo": docente.nombre_completo,
+                "dni": docente.dni,
+                "usuario_id": docente.usuario_id
+            }
+        },
+        "matriculas_automaticas": {
+            "total_alumnos_matriculados": len(matriculas_creadas),
+            "detalle": matriculas_creadas
+        },
+        "mensaje": f"Asignatura creada y {len(matriculas_creadas)} alumnos matriculados automáticamente"
+    }
 
 @router.get("/asignaturas")
 async def listar_asignaturas(
@@ -552,13 +809,13 @@ async def eliminar_asignatura(
 
 # ========== GESTIÓN DE MATRÍCULAS ==========
 
-@router.post("/matriculas", response_model=Matricula)
+@router.post("/matriculas", response_model=dict)
 async def matricular_alumno(
     matricula_data: MatriculaCreate,
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(require_role("admin"))
 ):
-    """Matricular alumno en asignatura"""
+    """Matricular alumno en todas las asignaturas de su ciclo automáticamente y enviar contraseña temporal."""
     # Verificar que el alumno existe
     alumno = db.query(Alumno).filter(Alumno.id == matricula_data.alumno_id).first()
     if not alumno:
@@ -567,50 +824,95 @@ async def matricular_alumno(
             detail="Alumno no encontrado"
         )
     
-    # Verificar que la asignatura existe
-    asignatura = db.query(Asignatura).filter(Asignatura.id == matricula_data.asignatura_id).first()
-    if not asignatura:
+    # Obtener todas las asignaturas del ciclo del alumno
+    asignaturas_ciclo = db.query(Asignatura).filter(Asignatura.ciclo == alumno.ciclo).all()
+    
+    if not asignaturas_ciclo:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Asignatura no encontrada"
+            detail=f"No se encontraron asignaturas para el {alumno.ciclo}"
         )
     
-    # Verificar que el alumno y la asignatura son del mismo ciclo
-    if alumno.ciclo != asignatura.ciclo:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"El alumno del Ciclo {alumno.ciclo} no puede matricularse en asignaturas del Ciclo {asignatura.ciclo}"
-        )
+    # Lista para almacenar las matrículas creadas
+    matriculas_creadas = []
     
-    # Verificar si ya está matriculado
-    existing_matricula = db.execute(
-        matriculas.select().where(
-            matriculas.c.alumno_id == matricula_data.alumno_id,
-            matriculas.c.asignatura_id == matricula_data.asignatura_id
-        )
-    ).first()
+    # Matricular al alumno en todas las asignaturas de su ciclo
+    for asignatura in asignaturas_ciclo:
+        # Verificar si ya está matriculado en esta asignatura
+        existing_matricula = db.execute(
+            matriculas.select().where(
+                matriculas.c.alumno_id == alumno.id,
+                matriculas.c.asignatura_id == asignatura.id
+            )
+        ).first()
+        
+        # Si no está matriculado, crear la matrícula
+        if not existing_matricula:
+            db.execute(
+                matriculas.insert().values(
+                    alumno_id=alumno.id,
+                    asignatura_id=asignatura.id
+                )
+            )
+            matriculas_creadas.append({
+                "alumno_id": alumno.id,
+                "asignatura_id": asignatura.id,
+                "asignatura_nombre": asignatura.nombre
+            })
     
-    if existing_matricula:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="El alumno ya está matriculado en esta asignatura"
-        )
-    
-    # Crear matrícula
-    db.execute(
-        matriculas.insert().values(
-            alumno_id=matricula_data.alumno_id,
-            asignatura_id=matricula_data.asignatura_id
-        )
-    )
+    # Confirmar los cambios en la base de datos
     db.commit()
     
-    return Matricula(
-        alumno_id=matricula_data.alumno_id,
-        asignatura_id=matricula_data.asignatura_id,
-        alumno=alumno,
-        asignatura=asignatura
-    )
+    # Obtener el usuario asociado al alumno
+    usuario = db.query(Usuario).filter(Usuario.id == alumno.usuario_id).first()
+    
+    # Información sobre las matrículas creadas
+    resultado = {
+        "mensaje": f"Alumno matriculado automáticamente en {len(matriculas_creadas)} asignaturas del {alumno.ciclo}",
+        "alumno": alumno.nombre_completo,
+        "ciclo": alumno.ciclo,
+        "matriculas": matriculas_creadas,
+        "email_sent": False
+    }
+    
+    # Generar y enviar contraseña temporal
+    if usuario:
+        # Generar nueva contraseña temporal
+        import secrets
+        import string
+        
+        # Generar contraseña temporal de 8 caracteres
+        password_chars = string.ascii_letters + string.digits
+        temp_password = ''.join(secrets.choice(password_chars) for _ in range(8))
+        
+        # Actualizar la contraseña en la base de datos
+        usuario.password_hash = get_password_hash(temp_password)
+        db.commit()
+        
+        # Intentar enviar email
+        try:
+            from email_config import send_password_email
+            email_result = await send_password_email(
+                email=usuario.email,
+                nombre=alumno.nombre_completo,
+                temp_password=temp_password
+            )
+            
+            if email_result["success"]:
+                resultado["email_sent"] = True
+                resultado["email_message"] = "Contraseña temporal enviada por email"
+            else:
+                # Si falla el email, retornar la contraseña para mostrar al admin
+                resultado["temp_password"] = temp_password
+                resultado["email_error"] = email_result["message"]
+                resultado["instructions"] = "La contraseña se generó correctamente pero no se pudo enviar por email. Configura las credenciales de email en el archivo .env"
+        except Exception as e:
+            # Si hay error en el servicio de email, retornar la contraseña
+            resultado["temp_password"] = temp_password
+            resultado["email_error"] = str(e)
+            resultado["instructions"] = "La contraseña se generó correctamente pero no se pudo enviar por email debido a un error."
+    
+    return resultado
 
 @router.get("/matriculas", response_model=List[Matricula])
 async def listar_matriculas(

@@ -62,16 +62,56 @@ const AdminMatriculas = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    
+    const alumnoSeleccionado = alumnos.find(a => a.id == formData.alumno_id);
+    
     try {
-      await adminService.createMatricula({
+      // Enviamos solo el ID del alumno, el backend se encargará de matricularlo en todas las asignaturas de su ciclo
+      const response = await adminService.createMatricula({
         alumno_id: parseInt(formData.alumno_id),
-        asignatura_id: parseInt(formData.asignatura_id)
+        asignatura_id: 0 // Valor ficticio, el backend lo ignorará
       });
+      
+      // Preparar mensaje según si se envió el email o no
+      let mensaje = '';
+      
+      if (response.email_sent) {
+        // Email enviado exitosamente
+        mensaje = `
+✅ ¡Matrícula exitosa!
+
+Alumno: ${response.alumno}
+Ciclo: ${response.ciclo}
+Asignaturas matriculadas: ${response.matriculas.length}
+
+Se ha enviado una contraseña temporal al correo del alumno.
+        `;
+      } else if (response.temp_password) {
+        // Email falló, mostrar contraseña temporal
+        mensaje = `
+⚠️ ¡Matrícula exitosa!
+
+Alumno: ${response.alumno}
+Ciclo: ${response.ciclo}
+Asignaturas matriculadas: ${response.matriculas.length}
+
+Contraseña temporal: ${response.temp_password}
+
+${response.instructions || 'No se pudo enviar el email con la contraseña.'}
+        `;
+      } else {
+        // No hay información de email (caso improbable)
+        mensaje = `¡Matrícula exitosa! El alumno ha sido matriculado automáticamente en ${response.matriculas.length} asignaturas de ${alumnoSeleccionado?.ciclo}.`;
+      }
+      
+      alert(mensaje);
+      
       loadData();
       setShowModal(false);
       resetForm();
     } catch (error) {
       console.error('Error al crear matrícula:', error);
+      alert('Error al crear la matrícula: ' + (error.response?.data?.detail || error.message));
     }
   };
 
@@ -93,14 +133,21 @@ const AdminMatriculas = () => {
     }
   };
 
-  // Obtener ciclos únicos con contadores de matrículas
+  // Obtener ciclos únicos con contadores de alumnos únicos matriculados
   const ciclosConContadores = matriculas.reduce((acc, matricula) => {
     const ciclo = matricula.alumno?.ciclo;
-    if (ciclo) {
+    const alumnoId = matricula.alumno?.id;
+    
+    if (ciclo && alumnoId) {
       if (!acc[ciclo]) {
-        acc[ciclo] = 0;
+        acc[ciclo] = { count: 0, alumnos: new Set() };
       }
-      acc[ciclo]++;
+      
+      // Solo incrementar si es un alumno nuevo
+      if (!acc[ciclo].alumnos.has(alumnoId)) {
+        acc[ciclo].alumnos.add(alumnoId);
+        acc[ciclo].count++;
+      }
     }
     return acc;
   }, {});
@@ -217,7 +264,7 @@ const AdminMatriculas = () => {
                   <div className="ml-3">
                     <h3 className="text-lg font-semibold text-gray-900">Ciclo {ciclo}</h3>
                     <p className="text-sm text-gray-500">
-                      {ciclosConContadores[ciclo]} {ciclosConContadores[ciclo] === 1 ? 'matrícula' : 'matrículas'}
+                      {ciclosConContadores[ciclo].count} {ciclosConContadores[ciclo].count === 1 ? 'alumno matriculado' : 'alumnos matriculados'}
                     </p>
                   </div>
                 </div>
@@ -516,35 +563,11 @@ const AdminMatriculas = () => {
                     <div className="text-sm text-blue-800">
                       <strong>Ciclo del alumno:</strong> {alumnos.find(a => a.id == formData.alumno_id)?.ciclo}
                     </div>
-                    <div className="text-xs text-blue-600 mt-1">
-                      Solo se mostrarán asignaturas de este ciclo
+                    <div className="text-xs text-green-600 mt-1 font-semibold">
+                      El alumno será matriculado automáticamente en todas las asignaturas de su ciclo
                     </div>
                   </div>
                 )}
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">
-                    Asignatura
-                  </label>
-                  <select
-                    required
-                    className="input-field"
-                    value={formData.asignatura_id}
-                    onChange={(e) => setFormData({...formData, asignatura_id: e.target.value})}
-                  >
-                    <option value="">Seleccionar asignatura</option>
-                    {asignaturas.map((asignatura) => (
-                      <option key={asignatura.id} value={asignatura.id}>
-                        {asignatura.nombre} - {asignatura.docente?.nombre_completo} (Ciclo {asignatura.ciclo})
-                      </option>
-                    ))}
-                  </select>
-                  {formData.alumno_id && asignaturas.length === 0 && (
-                    <div className="text-sm text-red-600 mt-1">
-                      No hay asignaturas disponibles para el Ciclo {alumnos.find(a => a.id == formData.alumno_id)?.ciclo}
-                    </div>
-                  )}
-                </div>
                 
                 <div className="flex justify-end space-x-3 pt-4">
                   <button

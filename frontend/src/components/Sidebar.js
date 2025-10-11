@@ -29,6 +29,7 @@ const Sidebar = ({ isOpen, onClose }) => {
         { name: 'Gestionar Asignaturas', href: '/admin/asignaturas', icon: BookOpen, roles: ['admin'] },
         { name: 'Matricular Alumnos', href: '/admin/matriculas', icon: UserCheck, roles: ['admin'] },
         { name: 'Ver Notas', href: '/admin/notas', icon: FileText, roles: ['admin'] },
+        { name: 'Historial Académico', href: '/admin/historial', icon: GraduationCap, roles: ['admin'] },
         { name: 'Mi Perfil', href: '/admin/perfil', icon: User, roles: ['admin'] }
       ];
     }
@@ -49,6 +50,7 @@ const Sidebar = ({ isOpen, onClose }) => {
         { name: 'Mis Asignaturas', href: '/alumno/asignaturas', icon: BookOpen, roles: ['alumno'] },
         { name: 'Mis Notas', href: '/alumno/notas', icon: FileText, roles: ['alumno'] },
         { name: 'Mis Promedios', href: '/alumno/promedios', icon: TrendingUp, roles: ['alumno'] },
+        { name: 'Mi Historial Académico', href: '/alumno/historial', icon: GraduationCap, roles: ['alumno'] },
         { name: 'Mi Perfil', href: '/alumno/perfil', icon: User, roles: ['alumno'] }
       ];
     }

@@ -14,7 +14,8 @@ const AlumnoAsignaturas = () => {
 
   const loadAsignaturas = async () => {
     try {
-      const data = await alumnoService.getMisAsignaturas();
+      // Pasar true para obtener solo asignaturas del ciclo actual
+      const data = await alumnoService.getMisAsignaturas(true);
       setAsignaturas(data);
     } catch (error) {
       console.error('Error al cargar asignaturas:', error);

@@ -331,6 +331,11 @@ const AdminAsignaturas = () => {
                     <option value="V">V</option>
                     <option value="VI">VI</option>
                   </select>
+                  {formData.ciclo && (
+                    <div className="mt-2 text-xs text-green-600 font-medium">
+                      Los alumnos de Ciclo {formData.ciclo} serán matriculados automáticamente en esta asignatura
+                    </div>
+                  )}
                 </div>
                 
                 <div>

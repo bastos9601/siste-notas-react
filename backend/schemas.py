@@ -2,6 +2,13 @@ from pydantic import BaseModel, EmailStr
 from typing import Optional, List
 from datetime import datetime, date
 
+# Constantes para tipos de registros académicos
+TIPO_REGISTRO = {
+    "MATRICULA": "matricula",
+    "NOTA": "nota",
+    "ASISTENCIA": "asistencia"
+}
+
 # Schemas para Usuario
 class UsuarioBase(BaseModel):
     nombre: str
@@ -135,9 +142,56 @@ class Matricula(BaseModel):
     class Config:
         from_attributes = True
 
+# Schemas para historial académico
+class NotaHistorialBase(BaseModel):
+    calificacion: float
+    tipo_nota: str
+    fecha_registro: datetime
+
+class NotaHistorialCreate(NotaHistorialBase):
+    asignatura_id: int
+
+class NotaHistorial(NotaHistorialBase):
+    id: int
+    asignatura_id: int
+    
+    class Config:
+        from_attributes = True
+
+class AsignaturaHistorialBase(BaseModel):
+    nombre: str
+    promedio: float
+
+class AsignaturaHistorialCreate(AsignaturaHistorialBase):
+    historial_id: int
+
+class AsignaturaHistorial(AsignaturaHistorialBase):
+    id: int
+    historial_id: int
+    notas: List[NotaHistorial] = []
+    
+    class Config:
+        from_attributes = True
+
+class HistorialAcademicoBase(BaseModel):
+    ciclo: str
+
+class HistorialAcademicoCreate(HistorialAcademicoBase):
+    alumno_id: int
+
+class HistorialAcademico(HistorialAcademicoBase):
+    id: int
+    alumno_id: int
+    fecha_registro: datetime
+    asignaturas: List[AsignaturaHistorial] = []
+    
+    class Config:
+        from_attributes = True
+
 # Schemas para respuestas con listas
 class AlumnoConNotas(Alumno):
     notas: List[Nota] = []
+    historiales: List[HistorialAcademico] = []
 
 class AsignaturaConNotas(Asignatura):
     notas: List[Nota] = []
