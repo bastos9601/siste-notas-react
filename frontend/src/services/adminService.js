@@ -34,7 +34,7 @@ export const adminService = {
   
   // Registrar siguiente ciclo (no matricular, solo actualizar campo ciclo)
   async registrarSiguienteCicloAlumno(id) {
-    const response = await api.post(`/admin/alumnos/${id}/matricula-automatica`);
+    const response = await api.post(`/admin/alumnos/${id}/registrar-siguiente-ciclo`);
     return response.data;
   },
 
