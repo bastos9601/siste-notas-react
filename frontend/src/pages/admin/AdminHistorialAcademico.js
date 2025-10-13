@@ -11,7 +11,19 @@ const AdminHistorialAcademico = ({ alumno, onClose }) => {
       try {
         setLoading(true);
         const data = await adminService.getHistorialAcademicoAlumno(alumno.id);
-        setHistorial(data);
+        // Filtrar para eliminar las entradas con "Ciclo Anterior"
+        const filteredData = data.filter(item => !item.ciclo.includes("Ciclo Anterior"));
+        
+        // Transformar los nombres de ciclo a "Ciclo: I", "Ciclo: II", etc.
+        const formattedData = filteredData.map(item => {
+          // Si el ciclo es un número romano (I, II, III, etc.), mantenerlo como está
+          if (/^[IVX]+$/.test(item.ciclo)) {
+            return { ...item, ciclo: `Ciclo: ${item.ciclo}` };
+          }
+          return item;
+        });
+        
+        setHistorial(formattedData);
       } catch (error) {
         console.error('Error al cargar historial académico:', error);
       } finally {
@@ -52,7 +64,7 @@ const AdminHistorialAcademico = ({ alumno, onClose }) => {
             {historial.map((ciclo, index) => (
               <div key={index} className="mb-6 border rounded-lg overflow-hidden">
                 <div className="bg-gray-100 px-4 py-2 font-medium">
-                  Ciclo: {ciclo.ciclo}
+                  {ciclo.ciclo}
                 </div>
                 <div className="p-4">
                   <table className="min-w-full divide-y divide-gray-200">
