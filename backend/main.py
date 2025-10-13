@@ -59,7 +59,7 @@ async def debug_users(db: Session = Depends(get_db)):
     
     # Información de debug adicional
     debug_info = {
-        "database_url": os.getenv("DATABASE_URL", "sqlite:///../sistema_notas.db"),
+        "database_url": os.getenv("DATABASE_URL", f"sqlite:///{os.path.join(os.path.dirname(os.path.abspath(__file__)), 'sistema_notas.db')}"),
         "current_directory": os.getcwd(),
         "database_exists": os.path.exists("../sistema_notas.db"),
         "database_path": os.path.abspath("../sistema_notas.db") if os.path.exists("../sistema_notas.db") else None
@@ -112,7 +112,7 @@ async def debug_users_detailed(db: Session = Depends(get_db)):
     users = db.query(Usuario).all()
     return {
         "total_users": len(users),
-        "database_url": os.getenv("DATABASE_URL", "sqlite:///../sistema_notas.db"),
+        "database_url": os.getenv("DATABASE_URL", f"sqlite:///{os.path.join(os.path.dirname(os.path.abspath(__file__)), 'sistema_notas.db')}"),
         "current_directory": os.getcwd(),
         "users": [
             {

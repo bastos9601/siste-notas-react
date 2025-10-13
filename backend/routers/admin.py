@@ -61,8 +61,8 @@ def alumno_aprobo_asignatura(db: Session, alumno_id: int, asignatura_id: int) ->
     return max(n.calificacion for n in notas) >= PASSING_GRADE
 
 
-def matricular_alumno_en_siguiente_ciclo(db: Session, alumno: Alumno) -> dict:
-    resultado = {"alumno_id": alumno.id, "nombre": alumno.nombre_completo, "matriculado": False, "mensaje": ""}
+def registrar_alumno_en_siguiente_ciclo(db: Session, alumno: Alumno) -> dict:
+    resultado = {"alumno_id": alumno.id, "nombre": alumno.nombre_completo, "matriculado": False, "registrado": False, "mensaje": ""}
     try:
         next_ciclo = get_next_cycle(alumno.ciclo)
     except ValueError as e:
@@ -83,10 +83,18 @@ def matricular_alumno_en_siguiente_ciclo(db: Session, alumno: Alumno) -> dict:
         resultado["mensaje"] = "No se encontraron asignaturas del ciclo actual para evaluar."
         return resultado
 
+    # Verificar si todas las asignaturas están aprobadas
+    asignaturas_no_aprobadas = []
     for asign in asignaturas_actuales:
         if not alumno_aprobo_asignatura(db, alumno.id, asign.id):
-            resultado["mensaje"] = f"No aprobó la asignatura: {asign.nombre} (id={asign.id})."
-            return resultado
+            asignaturas_no_aprobadas.append(asign.nombre)
+    
+    if asignaturas_no_aprobadas:
+        resultado["mensaje"] = f"No puede avanzar al siguiente ciclo. No ha aprobado las siguientes asignaturas: {', '.join(asignaturas_no_aprobadas)}."
+        resultado["puede_avanzar"] = False
+        return resultado
+    
+    resultado["puede_avanzar"] = True
 
     # Crear historial académico para el ciclo actual antes de avanzar al siguiente
     historial = HistorialAcademico(
@@ -164,36 +172,37 @@ def matricular_alumno_en_siguiente_ciclo(db: Session, alumno: Alumno) -> dict:
         resultado["mensaje"] = f"Registrado en el siguiente ciclo ({next_ciclo}). Existen {len(asignaturas_siguiente_ids)} asignaturas disponibles en ese ciclo. Se ha generado el historial académico."
     else:
         resultado["mensaje"] = f"Registrado en el siguiente ciclo ({next_ciclo}). No hay asignaturas definidas para ese ciclo. Se ha generado el historial académico."
+    resultado["puede_avanzar"] = True
 
     return resultado
 
 
-@router.post("/alumnos/{alumno_id}/matricula-automatica")
-async def admin_matricula_automatica_alumno(
+@router.post("/alumnos/{alumno_id}/registrar-siguiente-ciclo")
+async def admin_registrar_siguiente_ciclo_alumno(
     alumno_id: int,
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(require_role("admin"))
 ):
-    """Endpoint admin para forzar la matrícula automática de un alumno por su ID."""
+    """Endpoint admin para registrar un alumno en el siguiente ciclo sin matricularlo."""
     alumno = db.query(Alumno).filter(Alumno.id == alumno_id).first()
     if not alumno:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Alumno no encontrado")
-    resultado = matricular_alumno_en_siguiente_ciclo(db, alumno)
+    resultado = registrar_alumno_en_siguiente_ciclo(db, alumno)
     return resultado
 
 
-@router.post("/matricula-automatica/todos")
-async def admin_matricula_automatica_todos(
+@router.post("/registrar-siguiente-ciclo/todos")
+async def admin_registrar_siguiente_ciclo_todos(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(require_role("admin"))
 ):
-    """Endpoint admin para procesar matrícula automática de todos los alumnos.
+    """Endpoint admin para registrar todos los alumnos en el siguiente ciclo sin matricularlos.
     Retorna un reporte con los resultados por alumno.
     """
     alumnos = db.query(Alumno).all()
     reporte = []
     for alumno in alumnos:
-        reporte.append(matricular_alumno_en_siguiente_ciclo(db, alumno))
+        reporte.append(registrar_alumno_en_siguiente_ciclo(db, alumno))
     return reporte
 
 
@@ -974,7 +983,10 @@ async def listar_todas_notas(
     current_user: Usuario = Depends(require_role("admin"))
 ):
     """Listar todas las notas del sistema (solo admin)"""
-    notas = db.query(Nota).join(Alumno).join(Asignatura).all()
+    # Filtrar notas para que solo se muestren las del ciclo actual de cada alumno
+    notas = db.query(Nota).join(Alumno).join(Asignatura).filter(
+        Asignatura.ciclo == Alumno.ciclo
+    ).all()
     
     notas_data = []
     for nota in notas:

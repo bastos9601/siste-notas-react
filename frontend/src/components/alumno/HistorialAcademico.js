@@ -1,23 +1,33 @@
 import React, { useState, useEffect } from 'react';
 import { alumnoService } from '../../services/alumnoService';
-import { BookOpen, FileText, ChevronDown, ChevronRight, Clock, Archive } from 'lucide-react';
+import { BookOpen, FileText, ChevronDown, ChevronRight, Clock } from 'lucide-react';
 
 const HistorialAcademico = () => {
   const [historial, setHistorial] = useState([]);
-  const [asignaturasCicloAnterior, setAsignaturasCicloAnterior] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [loadingAsignaturas, setLoadingAsignaturas] = useState(false);
   const [error, setError] = useState(null);
   const [mostrarHistorial, setMostrarHistorial] = useState(false);
   const [expandedCiclos, setExpandedCiclos] = useState({});
-  const [mostrarAsignaturasCicloAnterior, setMostrarAsignaturasCicloAnterior] = useState(false);
 
   useEffect(() => {
     const cargarHistorial = async () => {
       try {
         setLoading(true);
         const data = await alumnoService.getHistorialAcademico();
-        setHistorial(data);
+        
+        // Filtrar para eliminar las entradas con "Ciclo Anterior"
+        const filteredData = data.filter(item => !item.ciclo.includes("Ciclo Anterior"));
+        
+        // Transformar los nombres de ciclo a "Ciclo: I", "Ciclo: II", etc.
+        const formattedData = filteredData.map(item => {
+          // Si el ciclo es un número romano (I, II, III, etc.), mantenerlo como está
+          if (/^[IVX]+$/.test(item.ciclo)) {
+            return { ...item, ciclo: `Ciclo: ${item.ciclo}` };
+          }
+          return item;
+        });
+        
+        setHistorial(formattedData);
         setError(null);
       } catch (err) {
         console.error("Error al cargar el historial académico:", err);
@@ -29,30 +39,6 @@ const HistorialAcademico = () => {
 
     cargarHistorial();
   }, []);
-
-  const cargarAsignaturasCicloAnterior = async () => {
-    try {
-      setLoadingAsignaturas(true);
-      // Obtener todas las asignaturas (incluyendo ciclos anteriores)
-      const data = await alumnoService.getMisAsignaturas(false);
-      
-      // Obtener asignaturas del ciclo actual para excluirlas
-      const asignaturasActuales = await alumnoService.getMisAsignaturas(true);
-      const nombresAsignaturasActuales = asignaturasActuales.map(a => a.nombre);
-      
-      // Filtrar solo las asignaturas que NO son del ciclo actual
-      const asignaturasAnteriores = data.filter(asignatura => 
-        !nombresAsignaturasActuales.includes(asignatura.nombre)
-      );
-      
-      setAsignaturasCicloAnterior(asignaturasAnteriores);
-    } catch (err) {
-      console.error("Error al cargar asignaturas de ciclos anteriores:", err);
-    } finally {
-      setLoadingAsignaturas(false);
-    }
-  };
-
   const toggleMostrarHistorial = () => {
     setMostrarHistorial(!mostrarHistorial);
   };
@@ -62,13 +48,6 @@ const HistorialAcademico = () => {
       ...expandedCiclos,
       [cicloId]: !expandedCiclos[cicloId]
     });
-  };
-
-  const toggleMostrarAsignaturasCicloAnterior = async () => {
-    if (!mostrarAsignaturasCicloAnterior && asignaturasCicloAnterior.length === 0) {
-      await cargarAsignaturasCicloAnterior();
-    }
-    setMostrarAsignaturasCicloAnterior(!mostrarAsignaturasCicloAnterior);
   };
 
   if (loading) {
@@ -91,72 +70,6 @@ const HistorialAcademico = () => {
 
   return (
     <div className="space-y-6">
-      {/* Tarjeta de ciclo anterior */}
-      {/* {historial.length > 0 && (
-        <div className="p-4 bg-white rounded-lg shadow-sm border border-gray-200">
-          <div 
-            className="flex justify-between items-center cursor-pointer"
-            onClick={toggleMostrarAsignaturasCicloAnterior}
-          >
-            <div className="flex items-center">
-              <Archive className="h-5 w-5 text-amber-600 mr-2" />
-              <h3 className="text-lg font-medium text-gray-900">Asignaturas de Ciclos Anteriores</h3>
-            </div>
-            <div>
-              {loadingAsignaturas ? (
-                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-amber-600"></div>
-              ) : (
-                mostrarAsignaturasCicloAnterior ? (
-                  <ChevronDown className="h-5 w-5 text-gray-500" />
-                ) : (
-                  <ChevronRight className="h-5 w-5 text-gray-500" />
-                )
-              )}
-            </div>
-          </div>
-
-          {mostrarAsignaturasCicloAnterior && (
-            <div className="mt-4">
-              {asignaturasCicloAnterior.length === 0 ? (
-                <p className="text-gray-600">No se encontraron asignaturas de ciclos anteriores.</p>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y divide-gray-200">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Asignatura
-                        </th>
-                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Ciclo
-                        </th>
-                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Docente
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
-                      {asignaturasCicloAnterior.map((asignatura) => (
-                        <tr key={asignatura.id} className="hover:bg-gray-50">
-                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                            {asignatura.nombre}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                            {asignatura.ciclo}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                            {asignatura.docente?.nombre_completo || 'No asignado'}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      )} */}
 
       {/* Historial académico completo */}
       <div className="p-4 bg-white rounded-lg shadow-sm border border-gray-200">
@@ -188,7 +101,7 @@ const HistorialAcademico = () => {
                 >
                   <div className="flex items-center">
                     <BookOpen className="h-5 w-5 text-blue-600 mr-2" />
-                    <h3 className="text-lg font-medium text-gray-900">Ciclo: {ciclo.ciclo}</h3>
+                    <h3 className="text-lg font-medium text-gray-900">{ciclo.ciclo}</h3>
                   </div>
                   <div className="flex items-center text-gray-500">
                     <span className="mr-2 text-sm">

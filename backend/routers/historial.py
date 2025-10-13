@@ -60,7 +60,7 @@ def get_mi_historial_academico(
         elif ciclo_actual == "VI":
             ciclo_anterior = "V"
         else:
-            ciclo_anterior = "Ciclo Anterior"
+            ciclo_anterior = ""
             
         # Si el alumno está en ciclo II, asegurarse de que las notas del ciclo I aparezcan
         if ciclo_actual == "II":

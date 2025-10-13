@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { adminService } from '../../services/adminService';
 import { BookOpen, User, GraduationCap, Calendar, Search, Eye, ChevronDown, ChevronRight } from 'lucide-react';
 
@@ -7,7 +7,18 @@ const AdminNotas = () => {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCiclo, setSelectedCiclo] = useState(null);
-  const [expandedRows, setExpandedRows] = useState({});
+  const [expandedRows, setExpandedRows] = useState([]);
+  
+  // Manejador para expandir/colapsar filas
+  const handleExpandRow = (alumnoId) => {
+    setExpandedRows(prevExpandedRows => {
+      if (prevExpandedRows.includes(alumnoId)) {
+        return prevExpandedRows.filter(id => id !== alumnoId);
+      } else {
+        return [...prevExpandedRows, alumnoId];
+      }
+    });
+  };
   const [notasPorAlumno, setNotasPorAlumno] = useState({});
 
   useEffect(() => {
@@ -38,6 +49,8 @@ const AdminNotas = () => {
 
     return matchesSearch && matchesCiclo;
   });
+  
+  // Usaremos getNotasAgrupadas() más adelante para mostrar los datos agrupados
 
   const getCalificacionColor = (calificacion) => {
     if (calificacion >= 18) return 'text-green-600 bg-green-50';
@@ -175,62 +188,85 @@ const AdminNotas = () => {
 
   const ciclos = Object.keys(ciclosConContadores).sort();
 
-  // Función para agrupar notas por alumno y asignatura
-  const getNotasAgrupadas = () => {
-    const agrupadas = {};
-    const notasIndividuales = [];
+  // La función getNotasAgrupadas ha sido eliminada ya que usamos useMemo directamente para calcular las notas agrupadas
 
-    // Mantener el formato original para la tabla principal
+  // Calculamos las notas agrupadas solo cuando cambian las notas filtradas
+  const notasParaMostrar = useMemo(() => {
+    if (!filteredNotas || filteredNotas.length === 0) {
+      return [];
+    }
+    
+    const agrupadasPorAlumno = {};
+    const alumnosAgrupados = [];
+
+    // Primero agrupar por alumno
     filteredNotas.forEach(nota => {
       const alumnoId = nota.alumno_id;
-      const asignaturaId = nota.asignatura_id;
-      
-      // Agrupar por alumno-asignatura
-      const key = `${alumnoId}-${asignaturaId}`;
-      if (!agrupadas[key]) {
-        agrupadas[key] = {
+      if (!agrupadasPorAlumno[alumnoId]) {
+        agrupadasPorAlumno[alumnoId] = {
           alumno_id: alumnoId,
           alumno_nombre: nota.alumno_nombre,
           alumno_dni: nota.alumno_dni,
           alumno_ciclo: nota.alumno_ciclo,
-          asignatura_id: asignaturaId,
-          asignatura_nombre: nota.asignatura_nombre,
-          docente_nombre: nota.docente_nombre,
-          notas: []
+          asignaturas: {}
         };
       }
-      agrupadas[key].notas.push(nota);
-    });
-
-    // Procesar grupos y calcular estadísticas
-    Object.values(agrupadas).forEach(grupo => {
-      if (grupo.notas.length > 0) {
-        // Calcular estadísticas del grupo usando la lógica simplificada
-        const promedioFinalSimplificado = calcularPromedioFinalSimplificado(grupo.notas);
-        const calificaciones = grupo.notas.map(n => n.calificacion);
-        const notaMaxima = Math.max(...calificaciones);
-        const notaMinima = Math.min(...calificaciones);
-        const fechaMasReciente = new Date(Math.max(...grupo.notas.map(n => new Date(n.fecha_registro))));
+      
+      // Solo incluir asignaturas del ciclo actual del alumno
+      // Verificamos si la asignatura pertenece al ciclo del alumno
+      const asignaturaCiclo = nota.asignatura_ciclo || nota.alumno_ciclo; // Si no existe, usamos el ciclo del alumno
+      
+      if (asignaturaCiclo === nota.alumno_ciclo) {
+        // Luego agrupar por asignatura
+        const asignaturaId = nota.asignatura_id;
+        if (!agrupadasPorAlumno[alumnoId].asignaturas[asignaturaId]) {
+          agrupadasPorAlumno[alumnoId].asignaturas[asignaturaId] = {
+            asignatura_id: asignaturaId,
+            asignatura_nombre: nota.asignatura_nombre,
+            docente_nombre: nota.docente_nombre,
+            notas: []
+          };
+        }
         
-        grupo.estadisticas = {
-          promedio: promedioFinalSimplificado.promedioFinal,
-          notaMaxima,
-          notaMinima,
-          totalNotas: grupo.notas.length,
-          fechaMasReciente
-        };
-        
-        notasIndividuales.push(grupo);
-      } else if (grupo.notas.length === 1) {
-        // Nota individual
-        notasIndividuales.push(grupo.notas[0]);
+        // Agregar la nota a la asignatura
+        agrupadasPorAlumno[alumnoId].asignaturas[asignaturaId].notas.push(nota);
       }
     });
     
-    return notasIndividuales;
-  };
-
-  const notasParaMostrar = getNotasAgrupadas();
+    // Convertir a array y calcular promedios
+    Object.values(agrupadasPorAlumno).forEach(alumno => {
+      const asignaturasArray = [];
+      let totalAsignaturas = 0;
+      let sumaPromedios = 0;
+      
+      Object.values(alumno.asignaturas).forEach(asignatura => {
+        const notas = asignatura.notas;
+        const promedio = notas.reduce((sum, nota) => sum + nota.calificacion, 0) / notas.length;
+        const maxNota = Math.max(...notas.map(nota => nota.calificacion));
+        const minNota = Math.min(...notas.map(nota => nota.calificacion));
+        
+        asignaturasArray.push({
+          ...asignatura,
+          promedio: promedio.toFixed(2),
+          max_nota: maxNota,
+          min_nota: minNota,
+          total_notas: notas.length
+        });
+        
+        totalAsignaturas++;
+        sumaPromedios += promedio;
+      });
+      
+      alumnosAgrupados.push({
+        ...alumno,
+        asignaturas: asignaturasArray,
+        total_asignaturas: totalAsignaturas,
+        promedio_general: totalAsignaturas > 0 ? (sumaPromedios / totalAsignaturas).toFixed(2) : 0
+      });
+    });
+    
+    return alumnosAgrupados;
+  }, [filteredNotas]);
 
   if (loading) {
     return (
@@ -436,25 +472,23 @@ const AdminNotas = () => {
                 </tr>
               ) : (
                 notasParaMostrar.map((item, index) => {
-                  const alumnoId = item.alumno_id || item.id;
-                  const alumnoNombre = item.alumno_nombre;
-                  
-                  return (
-                    <React.Fragment key={item.notas ? `grupo-${item.alumno_id}-${item.asignatura_id}` : item.id}>
-                      {/* Si es un grupo (tiene la propiedad 'notas') */}
-                      {item.notas ? (
+                    const alumnoId = item.alumno_id || item.id;
+                    const alumnoNombre = item.alumno_nombre;
+                    
+                    return (
+                      <React.Fragment key={item.asignaturas ? `alumno-${item.alumno_id}` : item.id}>
+                      {/* Si es un alumno con asignaturas */}
+                      {item.asignaturas ? (
                         <>
-                        <tr className="hover:bg-gray-50 bg-blue-50">
+                        <tr className={`hover:bg-gray-50 ${expandedRows.includes(item.alumno_id) ? 'bg-blue-50' : ''}`}>
                           <td className="px-6 py-4 whitespace-nowrap">
                             <div className="flex items-center">
                               <button 
-                                onClick={() => setExpandedRows(prev => ({
-                                  ...prev, 
-                                  [`${item.alumno_id}-${item.asignatura_id}`]: !prev[`${item.alumno_id}-${item.asignatura_id}`]
-                                }))}
+                                type="button"
+                                onClick={() => handleExpandRow(item.alumno_id)}
                                 className="mr-2 text-gray-500 hover:text-blue-600 focus:outline-none"
                               >
-                                {expandedRows[`${item.alumno_id}-${item.asignatura_id}`] ? 
+                                {expandedRows.includes(item.alumno_id) ? 
                                   <ChevronDown className="h-5 w-5" /> : 
                                   <ChevronRight className="h-5 w-5" />
                                 }
@@ -476,62 +510,58 @@ const AdminNotas = () => {
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
                             <div className="text-sm text-gray-900">
-                              {item.asignatura_nombre}
+                              {item.totalAsignaturas} asignaturas
                             </div>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
                             <div className="text-sm text-gray-900">
-                              {item.docente_nombre}
+                              Múltiples docentes
                             </div>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
                             <div className="space-y-1">
                               <div className="flex items-center space-x-2">
-                                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getCalificacionColor(item.estadisticas.promedio)}`}>
-                                  Promedio: {item.estadisticas.promedio}
+                                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getCalificacionColor(parseFloat(item.promedioGeneral))}`}>
+                                  Promedio: {item.promedioGeneral}
                                 </span>
-                              </div>
-                              <div className="text-xs text-gray-500">
-                                {item.estadisticas.totalNotas} notas • Max: {item.estadisticas.notaMaxima} • Min: {item.estadisticas.notaMinima}
                               </div>
                             </div>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
                             <div className="text-sm text-gray-500">
-                              {formatDate(item.estadisticas.fechaMasReciente)}
+                              {formatDate(item.fechaMasReciente)}
                             </div>
                           </td>
                         </tr>
                         
                         {/* Fila expandible con los promedios detallados */}
-                        {expandedRows[`${item.alumno_id}-${item.asignatura_id}`] && (
+                        {expandedRows.includes(item.alumno_id) && (
                           <tr className="bg-gray-50">
                             <td colSpan="6" className="px-6 py-4">
                               <div className="pl-7 border-l-2 border-blue-400">
-                                {notasPorAlumno[item.alumno_id] && (
-                                  <div>
-                                    <h4 className="text-sm font-medium text-gray-900 mb-2">Asignaturas de {item.alumno_nombre}</h4>
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                                      {Object.values(notasPorAlumno[item.alumno_id].asignaturas).map((asignatura) => (
-                                        <div key={asignatura.id} className="bg-white p-3 rounded-md border border-gray-200 shadow-sm">
-                                          <div className="flex justify-between items-center mb-1">
-                                            <h5 className="font-medium text-gray-900">{asignatura.nombre}</h5>
-                                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${getCalificacionColor(asignatura.promedio)}`}>
-                                              Promedio: {asignatura.promedio}
-                                            </span>
-                                          </div>
-                                          <div className="text-sm text-gray-600 mb-1">Docente: {asignatura.docente}</div>
-                                          <div className="text-xs text-gray-500">
-                                            {asignatura.totalNotas} notas • Max: {asignatura.notaMaxima} • Min: {asignatura.notaMinima}
-                                          </div>
+                                <div>
+                                  <h4 className="text-sm font-medium text-gray-900 mb-2">Asignaturas de {item.alumno_nombre}</h4>
+                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                                    {item.asignaturas && item.asignaturas.map((asignatura) => (
+                                      <div key={asignatura.id} className="bg-white p-3 rounded-md border border-gray-200 shadow-sm">
+                                        <div className="flex justify-between items-center mb-1">
+                                          <h5 className="font-medium text-gray-900">{asignatura.nombre}</h5>
+                                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${getCalificacionColor(parseFloat(asignatura.promedio))}`}>
+                                            Promedio: {asignatura.promedio}
+                                          </span>
                                         </div>
+                                        <div className="text-sm text-gray-600 mb-1">Docente: {asignatura.docente}</div>
+                                        <div className="text-xs text-gray-500">
+                                          {asignatura.totalNotas} notas • Max: {asignatura.notaMaxima} • Min: {asignatura.notaMinima}
+                                        </div>
+                                      </div>
                                       ))}
                                     </div>
                                   </div>
-                                )}
+                                
                                 <h4 className="text-sm font-medium text-gray-900 mb-2">Detalle de notas:</h4>
                                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                                  {item.notas.map((nota, idx) => (
+                                  {item.notas && item.notas.map((nota, idx) => (
                                     <div key={idx} className="bg-white p-3 rounded-md border border-gray-200">
                                       <div className="flex justify-between items-center mb-1">
                                         <span className="text-sm font-medium text-gray-700">{nota.tipo_nota || 'Nota'}</span>

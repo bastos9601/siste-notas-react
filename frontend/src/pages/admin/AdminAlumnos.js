@@ -124,10 +124,20 @@ ${response.instructions}
     try {
       if (!window.confirm(`¿Deseas registrar a ${alumnoNombre} en el siguiente ciclo (si corresponde)?`)) return;
       const response = await adminService.registrarSiguienteCicloAlumno(alumnoId);
-      // Mostrar mensaje devuelto
-      alert(response.mensaje || 'Operación completada');
-      // Recargar la lista de alumnos para reflejar el cambio de ciclo
-      loadAlumnos();
+      
+      // Verificar si el alumno puede avanzar
+      if (response.puede_avanzar === false) {
+        // Si no puede avanzar, mostrar mensaje de error
+        alert(`No se puede registrar al alumno: ${response.mensaje}`);
+      } else if (response.registrado) {
+        // Si fue registrado exitosamente
+        alert(`Éxito: ${response.mensaje}`);
+        // Recargar la lista de alumnos para reflejar el cambio de ciclo
+        loadAlumnos();
+      } else {
+        // Otro caso (por ejemplo, si ya está en el último ciclo)
+        alert(response.mensaje || 'Operación completada');
+      }
     } catch (error) {
       console.error('Error al registrar siguiente ciclo:', error);
       const errorMessage = error.response?.data?.detail || 'Error al registrar el siguiente ciclo. Inténtalo de nuevo.';
