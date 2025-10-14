@@ -204,7 +204,7 @@ const LoginSimple = () => {
         
         <div style={styles.credentials}>
           <p style={{ fontWeight: 'bold', marginBottom: '8px' }}>Usuarios de prueba:</p>
-          <p style={{ margin: '4px 0' }}>Admin: admin@sistema.com / admin123</p>
+          <p style={{ margin: '4px 0' }}>Admin: admin@sistema.com / admin12</p>
           <p style={{ margin: '4px 0' }}>Docente: juan.docente@sistema.com / docente123</p>
           <p style={{ margin: '4px 0' }}>Alumno: carlos.alumno@sistema.com / alumno123</p>
         </div>
