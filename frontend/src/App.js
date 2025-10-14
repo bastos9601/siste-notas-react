@@ -4,7 +4,7 @@ import './App.css';
 import { AuthProvider } from './contexts/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import Layout from './components/Layout';
-import Login from './pages/LoginSimple';
+import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import AdminAlumnos from './pages/admin/AdminAlumnos';
 import AdminDocentes from './pages/admin/AdminDocentes';
