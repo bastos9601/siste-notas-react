@@ -139,6 +139,173 @@ const DocenteNotas = () => {
     }
   };
 
+  // Función para obtener valores directos sin promediar
+  const calcularPromediosPonderados = (notasAlumno) => {
+    // Clasificar notas por tipo
+    const actividades = notasAlumno.filter(nota => 
+      ['participacion', 'tarea', 'quiz', 'exposicion', 'laboratorio', 'trabajo_grupal', 'actividades', 'actividad'].includes(nota.tipo_nota.toLowerCase())
+    );
+    
+    const practicas = notasAlumno.filter(nota => 
+      nota.tipo_nota.toLowerCase().includes('practica') || nota.tipo_nota.toLowerCase().includes('práctica')
+    );
+    
+    const parciales = notasAlumno.filter(nota => 
+      nota.tipo_nota.toLowerCase().includes('parcial') || nota.tipo_nota.toLowerCase().includes('examen_parcial')
+    );
+    
+    const examenFinal = notasAlumno.filter(nota => 
+      nota.tipo_nota.toLowerCase().includes('final') || nota.tipo_nota.toLowerCase().includes('examen_final')
+    );
+    
+    // Usar directamente los valores mostrados en el frontend sin promediar
+    let valorActividades = 0;
+    if (actividades.length > 0) {
+      // Usar el último valor de actividades
+      const ultimaActividad = actividades[actividades.length - 1];
+      valorActividades = parseFloat(ultimaActividad.calificacion);
+      if (isNaN(valorActividades)) valorActividades = 0;
+    }
+    
+    let valorPracticas = 0;
+    if (practicas.length > 0) {
+      // Usar el último valor de prácticas
+      const ultimaPractica = practicas[practicas.length - 1];
+      valorPracticas = parseFloat(ultimaPractica.calificacion);
+      if (isNaN(valorPracticas)) valorPracticas = 0;
+    }
+    
+    let valorParciales = 0;
+    if (parciales.length > 0) {
+      // Usar el último valor de parciales
+      const ultimoParcial = parciales[parciales.length - 1];
+      valorParciales = parseFloat(ultimoParcial.calificacion);
+      if (isNaN(valorParciales)) valorParciales = 0;
+    }
+    
+    let valorExamenFinal = 0;
+    if (examenFinal.length > 0) {
+      // Usar el último valor del examen final
+      const ultimoExamen = examenFinal[examenFinal.length - 1];
+      valorExamenFinal = parseFloat(ultimoExamen.calificacion);
+      if (isNaN(valorExamenFinal)) valorExamenFinal = 0;
+    }
+    
+    console.log("Valores directos a guardar:");
+    console.log("Actividades:", valorActividades);
+    console.log("Prácticas:", valorPracticas);
+    console.log("Parciales:", valorParciales);
+    console.log("Examen Final:", valorExamenFinal);
+    
+    // Calcular promedio final con valores directos
+    const promedioFinal = (
+      (valorActividades * 0.2) + 
+      (valorPracticas * 0.2) + 
+      (valorParciales * 0.3) + 
+      (valorExamenFinal * 0.3)
+    );
+    
+    return {
+      actividades: valorActividades,
+      practicas: valorPracticas,
+      parciales: valorParciales,
+      examen_final: valorExamenFinal,
+      promedio_final: promedioFinal
+    };
+  };
+  
+  // Función para guardar promedios en la base de datos
+  const guardarPromedios = async (alumnoId, asignaturaId) => {
+    try {
+      // Obtener todas las notas del alumno para esta asignatura
+      const notasAlumno = notas.filter(nota => nota.alumno_id === alumnoId);
+      
+      if (notasAlumno.length === 0) {
+        console.log("No hay notas para calcular promedios, eliminando promedios existentes");
+        // Eliminar promedios si no hay notas
+        const response = await docenteService.eliminarPromedios(alumnoId, asignaturaId);
+        console.log("Promedios eliminados exitosamente:", response);
+        
+        // Mostrar notificación de eliminación
+        const notificacionElement = document.createElement('div');
+        notificacionElement.className = 'fixed bottom-4 right-4 bg-blue-100 border-l-4 border-blue-500 text-blue-700 p-4 rounded shadow-md';
+        notificacionElement.style.zIndex = '9999';
+        notificacionElement.innerHTML = `
+          <div class="flex items-center">
+            <div class="py-1"><svg class="fill-current h-6 w-6 text-blue-500 mr-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M2.93 17.07A10 10 0 1 1 17.07 2.93 10 10 0 0 1 2.93 17.07zm12.73-1.41A8 8 0 1 0 4.34 4.34a8 8 0 0 0 11.32 11.32zM6.7 9.29L9 11.6l4.3-4.3 1.4 1.42L9 14.4l-3.7-3.7 1.4-1.42z"/></svg></div>
+            <div>
+              <p class="font-bold">Promedios eliminados</p>
+              <p class="text-sm">Los promedios del alumno han sido eliminados correctamente.</p>
+            </div>
+          </div>
+        `;
+        document.body.appendChild(notificacionElement);
+        
+        // Eliminar la notificación después de 3 segundos
+        setTimeout(() => {
+          if (document.body.contains(notificacionElement)) {
+            document.body.removeChild(notificacionElement);
+          }
+        }, 3000);
+        
+        return;
+      }
+      
+      // Calcular promedios con ponderaciones
+      const promedios = calcularPromediosPonderados(notasAlumno);
+      
+      // Preparar datos para guardar
+      const promedioData = {
+        alumno_id: alumnoId,
+        asignatura_id: asignaturaId,
+        actividades: promedios.actividades,
+        practicas: promedios.practicas,
+        parciales: promedios.parciales,
+        examen_final: promedios.examen_final,
+        promedio_final: promedios.promedio_final
+      };
+      
+      // Verificar que el examen final no sea NaN o undefined antes de enviarlo
+      if (isNaN(promedioData.examen_final)) {
+        console.log("¡Advertencia! El valor del examen final es NaN, estableciendo a 0");
+        promedioData.examen_final = 0;
+      }
+      
+      console.log("Datos de promedio a guardar:", promedioData);
+      
+      // Guardar promedios en la base de datos
+      const response = await docenteService.guardarPromedios([promedioData]);
+      console.log("Promedios guardados exitosamente:", response);
+      
+      // Mostrar notificación discreta de éxito
+      const notificacionElement = document.createElement('div');
+      notificacionElement.className = 'fixed bottom-4 right-4 bg-green-100 border-l-4 border-green-500 text-green-700 p-4 rounded shadow-md';
+      notificacionElement.style.zIndex = '9999';
+      notificacionElement.innerHTML = `
+        <div class="flex items-center">
+          <div class="py-1"><svg class="fill-current h-6 w-6 text-green-500 mr-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M2.93 17.07A10 10 0 1 1 17.07 2.93 10 10 0 0 1 2.93 17.07zm12.73-1.41A8 8 0 1 0 4.34 4.34a8 8 0 0 0 11.32 11.32zM6.7 9.29L9 11.6l4.3-4.3 1.4 1.42L9 14.4l-3.7-3.7 1.4-1.42z"/></svg></div>
+          <div>
+            <p class="font-bold">Promedios actualizados</p>
+            <p class="text-sm">Los promedios del alumno han sido guardados correctamente.</p>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(notificacionElement);
+      
+      // Eliminar la notificación después de 3 segundos
+      setTimeout(() => {
+        if (notificacionElement.parentNode) {
+          notificacionElement.parentNode.removeChild(notificacionElement);
+        }
+      }, 3000);
+      
+      return response;
+    } catch (error) {
+      console.error("Error al guardar promedios:", error);
+      throw error;
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
@@ -159,6 +326,16 @@ const DocenteNotas = () => {
       // Recargar datos después de guardar
       if (selectedAsignatura) {
         await loadAlumnosYNotas(selectedAsignatura);
+        
+        // Calcular y guardar promedios después de registrar/actualizar nota
+        try {
+          const alumnoId = parseInt(formData.alumno_id);
+          const asignaturaId = parseInt(formData.asignatura_id);
+          await guardarPromedios(alumnoId, asignaturaId);
+        } catch (promedioError) {
+          console.error("Error al guardar promedios:", promedioError);
+          // No interrumpimos el flujo principal si falla el guardado de promedios
+        }
       }
       
       setShowModal(false);

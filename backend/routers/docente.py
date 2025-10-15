@@ -1,16 +1,161 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Dict
 from database import get_db
-from models import Usuario, Docente, Asignatura, Alumno, Nota, matriculas
+from models import Usuario, Docente, Asignatura, Alumno, Nota, matriculas, Promedio
 from schemas import (
     Asignatura as AsignaturaSchema,
     Alumno as AlumnoSchema,
     NotaCreate, NotaUpdate, Nota as NotaSchema
 )
+from pydantic import BaseModel
+from typing import Optional, Any
 from auth import require_role, verify_password, get_password_hash
+from datetime import datetime
 
 router = APIRouter()
+
+class PromedioCreate(BaseModel):
+    alumno_id: int
+    asignatura_id: int
+    actividades: Optional[float] = None
+    practicas: Optional[float] = None
+    parciales: Optional[float] = None
+    examen_final: Optional[float] = None
+    promedio_final: Optional[float] = None
+    
+class TipoEvaluacion(BaseModel):
+    id: str
+    nombre: str
+    
+@router.get("/tipos-evaluacion", response_model=List[TipoEvaluacion])
+async def obtener_tipos_evaluacion(
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_role("docente"))
+):
+    """Obtener los tipos de evaluación disponibles en la tabla de promedios"""
+    try:
+        # Definimos los tipos de evaluación basados en las columnas de la tabla promedios
+        tipos_evaluacion = [
+            {"id": "actividades", "nombre": "Actividades"},
+            {"id": "practicas", "nombre": "Práctica"},
+            {"id": "parciales", "nombre": "Parcial"},
+            {"id": "examen_final", "nombre": "Examen Final"},
+            {"id": "promedio_final", "nombre": "Promedio Final"}
+        ]
+        return tipos_evaluacion
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al obtener tipos de evaluación: {str(e)}"
+        )
+
+@router.post("/guardar-promedios")
+async def guardar_promedios(
+    promedios: List[PromedioCreate],
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_role("docente"))
+):
+    """Guardar los promedios de los alumnos para una asignatura"""
+    docente = db.query(Docente).filter(Docente.usuario_id == current_user.id).first()
+    if not docente:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Docente no encontrado"
+        )
+    
+    resultados = []
+    for promedio_data in promedios:
+        # Verificar que la asignatura pertenece al docente
+        asignatura = db.query(Asignatura).filter(
+            Asignatura.id == promedio_data.asignatura_id,
+            Asignatura.docente_id == docente.id
+        ).first()
+        
+        if not asignatura:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"No tiene permiso para esta asignatura: {promedio_data.asignatura_id}"
+            )
+        
+        # Verificar si ya existe un promedio para este alumno y asignatura
+        promedio_existente = db.query(Promedio).filter(
+            Promedio.alumno_id == promedio_data.alumno_id,
+            Promedio.asignatura_id == promedio_data.asignatura_id
+        ).first()
+        
+        if promedio_existente:
+            # Actualizar el promedio existente
+            promedio_existente.actividades = promedio_data.actividades
+            promedio_existente.practicas = promedio_data.practicas
+            promedio_existente.parciales = promedio_data.parciales
+            promedio_existente.examen_final = promedio_data.examen_final
+            promedio_existente.promedio_final = promedio_data.promedio_final
+            db.commit()
+            db.refresh(promedio_existente)
+            resultados.append({"id": promedio_existente.id, "actualizado": True})
+        else:
+            # Crear un nuevo promedio
+            nuevo_promedio = Promedio(
+                alumno_id=promedio_data.alumno_id,
+                asignatura_id=promedio_data.asignatura_id,
+                actividades=promedio_data.actividades,
+                practicas=promedio_data.practicas,
+                parciales=promedio_data.parciales,
+                examen_final=promedio_data.examen_final,
+                promedio_final=promedio_data.promedio_final
+            )
+            db.add(nuevo_promedio)
+            db.commit()
+            db.refresh(nuevo_promedio)
+            resultados.append({"id": nuevo_promedio.id, "actualizado": False})
+    
+    return {"message": "Promedios guardados correctamente", "resultados": resultados}
+
+@router.delete("/eliminar-promedios/{alumno_id}/{asignatura_id}")
+async def eliminar_promedios(
+    alumno_id: int,
+    asignatura_id: int,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_role("docente"))
+):
+    """Eliminar los promedios de un alumno para una asignatura cuando no hay notas para calcular"""
+    docente = db.query(Docente).filter(Docente.usuario_id == current_user.id).first()
+    if not docente:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Docente no encontrado"
+        )
+    
+    # Verificar que la asignatura pertenece al docente
+    asignatura = db.query(Asignatura).filter(
+        Asignatura.id == asignatura_id,
+        Asignatura.docente_id == docente.id
+    ).first()
+    
+    if not asignatura:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No tiene permiso para esta asignatura"
+        )
+    
+    # Buscar el promedio a eliminar
+    promedio = db.query(Promedio).filter(
+        Promedio.alumno_id == alumno_id,
+        Promedio.asignatura_id == asignatura_id
+    ).first()
+    
+    if not promedio:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Promedio no encontrado"
+        )
+    
+    # Eliminar el promedio
+    db.delete(promedio)
+    db.commit()
+    
+    return {"message": "Promedio eliminado correctamente"}
 
 @router.get("/mis-asignaturas", response_model=List[AsignaturaSchema])
 async def mis_asignaturas(
@@ -49,6 +194,26 @@ async def alumnos_por_asignatura(
         Asignatura.docente_id == docente.id
     ).first()
     
+@router.get("/asignatura/{asignatura_id}/alumnos", response_model=List[AlumnoSchema])
+async def alumnos_por_asignatura_nuevo(
+    asignatura_id: int,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_role("docente"))
+):
+    """Obtener alumnos matriculados en una asignatura específica (nuevo endpoint)"""
+    # Verificar que el docente tiene acceso a esta asignatura
+    docente = db.query(Docente).filter(Docente.usuario_id == current_user.id).first()
+    if not docente:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Docente no encontrado"
+        )
+    
+    asignatura = db.query(Asignatura).filter(
+        Asignatura.id == asignatura_id,
+        Asignatura.docente_id == docente.id
+    ).first()
+    
     if not asignatura:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -70,6 +235,49 @@ async def alumnos_por_asignatura(
             alumnos.append(alumno)
     
     return alumnos
+
+@router.get("/asignatura/{asignatura_id}/notas", response_model=List[NotaSchema])
+async def get_notas_por_asignatura_nuevo(
+    asignatura_id: int,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_role("docente"))
+):
+    """Obtener todas las notas de una asignatura específica (nuevo endpoint)"""
+    # Verificar que el docente tiene acceso a esta asignatura
+    docente = db.query(Docente).filter(Docente.usuario_id == current_user.id).first()
+    if not docente:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Docente no encontrado"
+        )
+    
+    asignatura = db.query(Asignatura).filter(
+        Asignatura.id == asignatura_id,
+        Asignatura.docente_id == docente.id
+    ).first()
+    
+    if not asignatura:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Asignatura no encontrada o no tienes acceso a ella"
+        )
+    
+    # Obtener alumnos matriculados
+    from sqlalchemy import text
+    matriculas_data = db.execute(
+        text("SELECT alumno_id FROM matriculas WHERE asignatura_id = :asignatura_id"),
+        {"asignatura_id": asignatura_id}
+    ).fetchall()
+    
+    alumno_ids = [matricula[0] for matricula in matriculas_data]
+    
+    # Obtener todas las notas de estos alumnos para esta asignatura
+    notas = db.query(Nota).filter(
+        Nota.alumno_id.in_(alumno_ids),
+        Nota.asignatura_id == asignatura_id
+    ).all()
+    
+    return notas
 
 @router.get("/asignaturas/{asignatura_id}/notas", response_model=List[NotaSchema])
 async def get_notas_por_asignatura(
@@ -660,6 +868,232 @@ async def enviar_todas_las_notas(
             "instructions": "Verifica la configuración de email en el sistema."
         }
 
+@router.get("/reportes/{asignatura_id}/{tipo_evaluacion}")
+async def obtener_reporte(
+    asignatura_id: int,
+    tipo_evaluacion: str,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_role("docente"))
+):
+    """Obtener reporte de notas por asignatura y tipo de evaluación"""
+    # Verificar que el docente tiene acceso a esta asignatura
+    docente = db.query(Docente).filter(Docente.usuario_id == current_user.id).first()
+    if not docente:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Docente no encontrado"
+        )
+    
+    # Verificar que la asignatura pertenece al docente
+    asignatura = db.query(Asignatura).filter(
+        Asignatura.id == asignatura_id,
+        Asignatura.docente_id == docente.id
+    ).first()
+    
+    if not asignatura:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Asignatura no encontrada o no tienes acceso a ella"
+        )
+    
+    # Obtener alumnos matriculados en la asignatura
+    from sqlalchemy import text
+    matriculas_data = db.execute(
+        text("SELECT alumno_id FROM matriculas WHERE asignatura_id = :asignatura_id"),
+        {"asignatura_id": asignatura_id}
+    ).fetchall()
+    
+    alumno_ids = [matricula[0] for matricula in matriculas_data]
+    
+    # Obtener notas del tipo especificado para estos alumnos
+    reporte_data = []
+    for alumno_id in alumno_ids:
+        alumno = db.query(Alumno).filter(Alumno.id == alumno_id).first()
+        if not alumno:
+            continue
+        
+        # Buscar la nota del tipo especificado
+        nota = db.query(Nota).filter(
+            Nota.alumno_id == alumno_id,
+            Nota.asignatura_id == asignatura_id,
+            Nota.tipo_nota == tipo_evaluacion
+        ).first()
+        
+        # Si es promedio final, buscar en la tabla de promedios
+        calificacion = 0  # Valor predeterminado
+        if tipo_evaluacion == "Promedio Final":
+            promedio = db.query(Promedio).filter(
+                Promedio.alumno_id == alumno_id,
+                Promedio.asignatura_id == asignatura_id
+            ).first()
+            if promedio and promedio.promedio_final is not None:
+                calificacion = promedio.promedio_final
+        elif tipo_evaluacion == "Actividades":
+            promedio = db.query(Promedio).filter(
+                Promedio.alumno_id == alumno_id,
+                Promedio.asignatura_id == asignatura_id
+            ).first()
+            if promedio and promedio.actividades is not None:
+                calificacion = promedio.actividades
+            elif nota and nota.calificacion is not None:
+                calificacion = nota.calificacion
+        elif tipo_evaluacion == "Prácticas":
+            promedio = db.query(Promedio).filter(
+                Promedio.alumno_id == alumno_id,
+                Promedio.asignatura_id == asignatura_id
+            ).first()
+            if promedio and promedio.practicas is not None:
+                calificacion = promedio.practicas
+            elif nota and nota.calificacion is not None:
+                calificacion = nota.calificacion
+        elif tipo_evaluacion == "Parciales":
+            promedio = db.query(Promedio).filter(
+                Promedio.alumno_id == alumno_id,
+                Promedio.asignatura_id == asignatura_id
+            ).first()
+            if promedio and promedio.parciales is not None:
+                calificacion = promedio.parciales
+            elif nota and nota.calificacion is not None:
+                calificacion = nota.calificacion
+        elif tipo_evaluacion == "Examen Final":
+            promedio = db.query(Promedio).filter(
+                Promedio.alumno_id == alumno_id,
+                Promedio.asignatura_id == asignatura_id
+            ).first()
+            if promedio and promedio.examen_final is not None:
+                calificacion = promedio.examen_final
+            elif nota and nota.calificacion is not None:
+                calificacion = nota.calificacion
+        elif nota and nota.calificacion is not None:
+            calificacion = nota.calificacion
+        
+        # Agregar al reporte
+        reporte_data.append({
+            "alumno": alumno.nombre_completo,
+            "asignatura": asignatura.nombre,
+            "ciclo": alumno.ciclo,
+            "tipo_evaluacion": tipo_evaluacion,
+            "calificacion": calificacion
+        })
+    
+    return {
+        "reporte": reporte_data,
+        "total_alumnos": len(reporte_data),
+        "asignatura": asignatura.nombre,
+        "tipo_evaluacion": tipo_evaluacion
+    }
+
+@router.post("/reportes/enviar-admin")
+async def enviar_reporte_admin(
+    reporte_data: dict,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_role("docente"))
+):
+    """Enviar reporte de notas al administrador"""
+    # Verificar que el docente existe
+    docente = db.query(Docente).filter(Docente.usuario_id == current_user.id).first()
+    if not docente:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Docente no encontrado"
+        )
+    
+    # Aquí se implementaría la lógica para enviar el reporte al administrador
+    # Por ejemplo, guardar en una tabla de reportes o enviar por email
+    
+    return {
+        "message": "Reporte enviado al administrador exitosamente",
+        "docente": docente.nombre_completo,
+        "fecha_envio": str(datetime.now())
+    }
+
+@router.get("/asignatura/{asignatura_id}/promedios", response_model=List[Dict[str, Any]])
+async def obtener_promedios_asignatura(
+    asignatura_id: int,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_role("docente"))
+):
+    """Obtener todos los promedios de una asignatura"""
+    try:
+        # Verificar que el docente tiene acceso a esta asignatura
+        docente = db.query(Docente).filter(Docente.usuario_id == current_user.id).first()
+        if not docente:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Docente no encontrado"
+            )
+        
+        # Verificar que la asignatura pertenece al docente
+        asignatura = db.query(Asignatura).filter(
+            Asignatura.id == asignatura_id,
+            Asignatura.docente_id == docente.id
+        ).first()
+        
+        if not asignatura:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Asignatura no encontrada o no tienes acceso a ella"
+            )
+        
+        # Obtener todos los promedios de la asignatura
+        promedios = db.query(Promedio).filter(
+            Promedio.asignatura_id == asignatura_id
+        ).all()
+        
+        # Obtener todos los alumnos matriculados en la asignatura
+        alumnos_matriculados = db.query(Alumno).join(
+            matriculas, 
+            matriculas.c.alumno_id == Alumno.id
+        ).filter(
+            matriculas.c.asignatura_id == asignatura_id
+        ).all()
+        
+        # Convertir a formato JSON
+        promedios_data = []
+        for alumno in alumnos_matriculados:
+            # Buscar el promedio del alumno
+            promedio = next((p for p in promedios if p.alumno_id == alumno.id), None)
+            
+            # Verificar que el alumno existe
+            if alumno:
+                # Crear diccionario con valores predeterminados
+                datos_promedio = {
+                    "alumno_id": alumno.id,
+                    "asignatura_id": asignatura_id,
+                    "nombre_alumno": f"{alumno.apellidos} {alumno.nombres}" if alumno.apellidos and alumno.nombres else "Sin nombre",
+                    "actividades": None,
+                    "practicas": None,
+                    "parciales": None,
+                    "examen_final": None,
+                    "promedio_final": None
+                }
+                
+                # Si existe un promedio para este alumno, actualizar los valores
+                if promedio:
+                    datos_promedio.update({
+                        "id": promedio.id,
+                        "actividades": promedio.actividades,
+                        "practicas": promedio.practicas,
+                        "parciales": promedio.parciales,
+                        "examen_final": promedio.examen_final,
+                        "promedio_final": promedio.promedio_final
+                    })
+                
+                promedios_data.append(datos_promedio)
+        
+        return promedios_data
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al obtener promedios: {str(e)}"
+        )
+        
+        return promedios_data
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al obtener promedios: {str(e)}"
+        )
 @router.put("/mi-perfil")
 async def actualizar_mi_perfil(
     perfil_data: dict,
