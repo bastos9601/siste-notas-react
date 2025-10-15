@@ -18,6 +18,7 @@ import DocenteNotas from './pages/docente/DocenteNotas';
 import DocenteAlumnos from './pages/docente/DocenteAlumnos';
 import DocenteAlumnosCiclo from './pages/docente/DocenteAlumnosCiclo';
 import DocentePerfil from './pages/docente/DocentePerfil';
+import DocenteReportes from './pages/docente/DocenteReportes';
 import AlumnoAsignaturas from './pages/alumno/AlumnoAsignaturas';
 import AlumnoNotas from './pages/alumno/AlumnoNotas';
 import AlumnoPromedios from './pages/alumno/AlumnoPromedios';
@@ -110,6 +111,11 @@ function App() {
               <Route path="docente/perfil" element={
                 <ProtectedRoute allowedRoles={['docente']}>
                   <DocentePerfil />
+                </ProtectedRoute>
+              } />
+              <Route path="docente/reportes" element={
+                <ProtectedRoute allowedRoles={['docente']}>
+                  <DocenteReportes />
                 </ProtectedRoute>
               } />
               
