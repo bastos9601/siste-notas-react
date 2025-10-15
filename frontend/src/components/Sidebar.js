@@ -9,7 +9,8 @@ import {
   FileText,
   TrendingUp,
   User,
-  X
+  X,
+  BarChart
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -40,6 +41,7 @@ const Sidebar = ({ isOpen, onClose }) => {
         { name: 'Mis Asignaturas', href: '/docente/asignaturas', icon: BookOpen, roles: ['docente'] },
         { name: 'Gestionar Alumnos', href: '/docente/alumnos-ciclo', icon: Users, roles: ['docente'] },
         { name: 'Registrar Notas', href: '/docente/notas', icon: FileText, roles: ['docente'] },
+        { name: 'Reportes', href: '/docente/reportes', icon: BarChart, roles: ['docente'] },
         { name: 'Mi Perfil', href: '/docente/perfil', icon: User, roles: ['docente'] }
       ];
     }

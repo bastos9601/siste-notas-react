@@ -8,7 +8,7 @@ export const docenteService = {
   },
 
   async getAlumnosPorAsignatura(asignaturaId) {
-    const response = await api.get(`/docente/asignaturas/${asignaturaId}/alumnos`);
+    const response = await api.get(`/docente/asignatura/${asignaturaId}/alumnos`);
     return response.data;
   },
 
@@ -47,6 +47,18 @@ export const docenteService = {
 
   async publicarTodasNotas(asignaturaId) {
     const response = await api.put(`/docente/asignaturas/${asignaturaId}/publicar-todas-notas`);
+    return response.data;
+  },
+  
+  // Guardar promedios
+  async guardarPromedios(promediosData) {
+    const response = await api.post('/docente/guardar-promedios', promediosData);
+    return response.data;
+  },
+  
+  // Eliminar promedios cuando no hay notas
+  async eliminarPromedios(alumnoId, asignaturaId) {
+    const response = await api.delete(`/docente/eliminar-promedios/${alumnoId}/${asignaturaId}`);
     return response.data;
   },
 

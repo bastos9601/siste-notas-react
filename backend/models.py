@@ -121,3 +121,21 @@ matriculas = Table(
     Column('alumno_id', Integer, ForeignKey('alumnos.id'), primary_key=True),
     Column('asignatura_id', Integer, ForeignKey('asignaturas.id'), primary_key=True)
 )
+
+class Promedio(Base):
+    __tablename__ = "promedios"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    alumno_id = Column(Integer, ForeignKey("alumnos.id"), nullable=False)
+    asignatura_id = Column(Integer, ForeignKey("asignaturas.id"), nullable=False)
+    actividades = Column(Float, nullable=True)
+    practicas = Column(Float, nullable=True)
+    parciales = Column(Float, nullable=True)
+    examen_final = Column(Float, nullable=True)
+    promedio_final = Column(Float, nullable=True)
+    fecha_registro = Column(DateTime(timezone=True), server_default=func.now())
+    fecha_actualizacion = Column(DateTime(timezone=True), onupdate=func.now())
+    
+    # Relaciones
+    alumno = relationship("Alumno", backref="promedios")
+    asignatura = relationship("Asignatura", backref="promedios")
