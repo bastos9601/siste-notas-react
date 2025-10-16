@@ -141,5 +141,13 @@ export const adminService = {
   async getHistorialAcademicoAlumno(alumnoId) {
     const response = await api.get(`/historial/alumnos/${alumnoId}/historial`);
     return response.data;
+  },
+
+  async deleteHistorialAcademicoAlumno(alumnoId, ciclo = null) {
+    const url = ciclo 
+      ? `/historial/alumnos/${alumnoId}/historial?ciclo=${encodeURIComponent(ciclo)}`
+      : `/historial/alumnos/${alumnoId}/historial`;
+    const response = await api.delete(url);
+    return response.data;
   }
 };

@@ -50,7 +50,19 @@ const AdminReportes = () => {
     try {
       const resp = await api.get(`/admin/reportes/${reporte.id}/archivo`, { responseType: 'blob' });
 
-      // Convertir Blob -> texto con fallback para navegadores que no soportan blob.text()
+      // Determinar tipo de archivo por Content-Type o por extensión del nombre
+      const contentType = (resp.headers && (resp.headers['content-type'] || resp.headers['Content-Type'])) || '';
+      const nombre = reporte.archivo_path?.split('\\').pop() || reporte.archivo_path?.split('/').pop() || '';
+      const ext = (nombre && nombre.includes('.')) ? nombre.split('.').pop().toLowerCase() : '';
+
+      // Si es un PDF ya generado por el docente, abrirlo directamente
+      if (contentType.includes('pdf') || ext === 'pdf') {
+        const pdfUrl = window.URL.createObjectURL(resp.data);
+        window.open(pdfUrl, '_blank');
+        return;
+      }
+
+      // Caso contrario, asumimos CSV y lo convertimos a PDF para visualizar
       const blobToText = (blob) => {
         if (blob && typeof blob.text === 'function') {
           return blob.text();
@@ -70,7 +82,6 @@ const AdminReportes = () => {
         alert('El reporte está vacío.');
         return;
       }
-      // Detectar delimitador: coma, punto y coma o tab
       const firstLine = lines[0];
       const delimiter = firstLine.includes(';') ? ';' : (firstLine.includes('\t') ? '\t' : ',');
       const headers = firstLine.split(delimiter).map(h => h.trim());
@@ -96,27 +107,25 @@ const AdminReportes = () => {
         body: rows,
         styles: { fontSize: 10 },
         headStyles: { fillColor: [30, 64, 175], textColor: [255, 255, 255] },
-        // Centrar la columna de calificación si existe
         columnStyles: (() => {
           const idx = headers.findIndex(h => /calific/i.test(h));
           return idx >= 0 ? { [idx]: { halign: 'center' } } : {};
         })(),
-        // Colorear SOLO el texto de la calificación según el rango
         didParseCell: (data) => {
           const gradeColIdx = headers.findIndex(h => /calific/i.test(h));
           if (data.section === 'body' && data.column.index === gradeColIdx) {
             const rawText = Array.isArray(data.cell.text) ? data.cell.text.join(' ') : String(data.cell.text || data.cell.raw || '');
-            const normalized = rawText.replace(',', '.');
-            const match = normalized.match(/-?\d+(?:\.\d+)?/);
+            const normalizedText = rawText.replace(',', '.');
+            const match = normalizedText.match(/-?\d+(?:\.\d+)?/);
             const grade = match ? parseFloat(match[0]) : NaN;
 
             if (!Number.isNaN(grade)) {
               if (grade >= 13 && grade <= 20) {
-                data.cell.styles.textColor = [34, 197, 94]; // verde
+                data.cell.styles.textColor = [34, 197, 94];
               } else if (grade >= 10 && grade < 13) {
-                data.cell.styles.textColor = [234, 179, 8]; // amarillo
+                data.cell.styles.textColor = [234, 179, 8];
               } else if (grade >= 5 && grade < 10) {
-                data.cell.styles.textColor = [239, 68, 68]; // rojo
+                data.cell.styles.textColor = [239, 68, 68];
               }
             }
           }

@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
 from database import get_db
 from models import Alumno, Asignatura, Nota, HistorialAcademico, AsignaturaHistorial, NotaHistorial, matriculas
 from schemas import (
@@ -20,7 +20,8 @@ router = APIRouter()
 @router.get("/alumnos/me/historial", response_model=List[HistorialAcademicoSchema])
 def get_mi_historial_academico(
     db: Session = Depends(get_db),
-    current_user = Depends(require_role("alumno"))
+    current_user = Depends(require_role("alumno")),
+    auto_generar: bool = False
 ):
     # Buscar el alumno asociado al usuario
     alumno = db.query(Alumno).filter(Alumno.usuario_id == current_user.id).first()
@@ -33,8 +34,8 @@ def get_mi_historial_academico(
     # Obtener el historial académico del alumno
     historiales = db.query(HistorialAcademico).filter(HistorialAcademico.alumno_id == alumno.id).all()
     
-    # Si no hay historiales, intentar generar uno automáticamente con asignaturas de ciclos anteriores
-    if not historiales:
+    # Si no hay historiales y se solicita explícitamente, generar uno automáticamente
+    if not historiales and auto_generar:
         # Obtener todas las asignaturas del alumno (incluyendo ciclos anteriores)
         asignaturas = db.query(Asignatura).join(
             matriculas, 
@@ -161,7 +162,7 @@ def get_historial_academico(
 def create_historial_academico(
     alumno_id: int,
     db: Session = Depends(get_db),
-    current_user = Depends(require_role(["admin"]))
+    current_user = Depends(require_role("admin"))
 ):
     # Verificar si el alumno existe
     alumno = db.query(Alumno).filter(Alumno.id == alumno_id).first()
@@ -230,3 +231,50 @@ def create_historial_academico(
     db.refresh(historial)
     
     return historial
+
+# Eliminar historial académico de un alumno (admin). Si se pasa el parámetro
+# "ciclo", elimina solo ese ciclo; si no se pasa, elimina todo el historial.
+@router.delete("/alumnos/{alumno_id}/historial")
+def delete_historial_academico(
+    alumno_id: int,
+    ciclo: Optional[str] = None,
+    db: Session = Depends(get_db),
+    current_user = Depends(require_role("admin"))
+):
+    # Verificar si el alumno existe
+    alumno = db.query(Alumno).filter(Alumno.id == alumno_id).first()
+    if not alumno:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Alumno no encontrado"
+        )
+
+    # Seleccionar historiales a eliminar
+    query = db.query(HistorialAcademico).filter(HistorialAcademico.alumno_id == alumno_id)
+    if ciclo:
+        query = query.filter(HistorialAcademico.ciclo == ciclo)
+    historiales = query.all()
+
+    if not historiales:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No hay historial académico para eliminar"
+        )
+
+    try:
+        for historial in historiales:
+            # Eliminar notas y asignaturas del historial
+            asignaturas_historial = db.query(AsignaturaHistorial).filter(AsignaturaHistorial.historial_id == historial.id).all()
+            for asignatura in asignaturas_historial:
+                db.query(NotaHistorial).filter(NotaHistorial.asignatura_id == asignatura.id).delete()
+            db.query(AsignaturaHistorial).filter(AsignaturaHistorial.historial_id == historial.id).delete()
+            db.delete(historial)
+
+        db.commit()
+        return {"message": "Historial académico eliminado", "alumno_id": alumno_id, "ciclo": ciclo}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al eliminar historial académico: {str(e)}"
+        )
