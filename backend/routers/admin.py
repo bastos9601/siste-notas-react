@@ -2,16 +2,18 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session, joinedload
 from typing import List
 from database import get_db
-from models import Usuario, Alumno, Docente, Asignatura, Nota, matriculas, HistorialAcademico, AsignaturaHistorial, NotaHistorial
+from models import Usuario, Alumno, Docente, Asignatura, Nota, matriculas, HistorialAcademico, AsignaturaHistorial, NotaHistorial, ReporteDocente
 from schemas import (
     AlumnoCreate, AlumnoUpdate, Alumno as AlumnoSchema,
     DocenteCreate, Docente as DocenteSchema,
     AsignaturaCreate, Asignatura as AsignaturaSchema,
-    MatriculaCreate, Matricula
+    MatriculaCreate, Matricula,
+    ReporteDocente as ReporteDocenteSchema
 )
 from auth import require_role, get_password_hash, verify_password
 from fastapi import BackgroundTasks
 from sqlalchemy.orm import Session
+from starlette.responses import FileResponse
 import os
 import re
 from sqlalchemy import func
@@ -1264,4 +1266,64 @@ async def actualizar_mi_perfil_admin(
             "email": current_user.email,
             "rol": current_user.rol
         }
+    }
+
+# ========== REPORTES DE DOCENTES ==========
+
+@router.get("/reportes", response_model=List[ReporteDocenteSchema])
+async def listar_reportes_docentes(
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_role("admin"))
+):
+    """Listar reportes enviados por docentes."""
+    reportes = db.query(ReporteDocente).order_by(ReporteDocente.fecha_envio.desc()).all()
+    return reportes
+
+@router.get("/reportes/{reporte_id}/archivo")
+async def descargar_archivo_reporte(
+    reporte_id: int,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_role("admin"))
+):
+    """Descargar el archivo CSV del reporte enviado por un docente."""
+    reporte = db.query(ReporteDocente).filter(ReporteDocente.id == reporte_id).first()
+    if not reporte:
+        raise HTTPException(status_code=404, detail="Reporte no encontrado")
+    try:
+        return FileResponse(path=reporte.archivo_path, filename=os.path.basename(reporte.archivo_path))
+    except Exception:
+        raise HTTPException(status_code=500, detail="No se pudo leer el archivo del reporte")
+
+@router.delete("/reportes/{reporte_id}")
+async def eliminar_reporte_docente(
+    reporte_id: int,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_role("admin"))
+):
+    """Eliminar un reporte de docente, removiendo su registro y archivo CSV."""
+    reporte = db.query(ReporteDocente).filter(ReporteDocente.id == reporte_id).first()
+    if not reporte:
+        raise HTTPException(status_code=404, detail="Reporte no encontrado")
+
+    # Intentar eliminar el archivo en disco si existe
+    file_removed = False
+    try:
+        if reporte.archivo_path and os.path.exists(reporte.archivo_path):
+            os.remove(reporte.archivo_path)
+            file_removed = True
+    except Exception as e:
+        # No bloquear la eliminación del registro si falla borrar el archivo
+        file_removed = False
+
+    # Eliminar registro en la base de datos
+    try:
+        db.delete(reporte)
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"No se pudo eliminar el reporte: {e}")
+
+    return {
+        "message": "Reporte eliminado correctamente",
+        "file_removed": file_removed
     }

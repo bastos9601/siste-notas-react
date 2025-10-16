@@ -196,3 +196,18 @@ class AlumnoConNotas(Alumno):
 class AsignaturaConNotas(Asignatura):
     notas: List[Nota] = []
     alumnos_matriculados: List[Alumno] = []
+
+# Schemas para Reportes enviados por Docentes
+class ReporteDocenteBase(BaseModel):
+    docente_id: int
+    nombre_docente: str
+    asignatura: str
+    tipo_evaluacion: str
+    archivo_path: str
+
+class ReporteDocente(ReporteDocenteBase):
+    id: int
+    fecha_envio: datetime
+
+    class Config:
+        from_attributes = True
