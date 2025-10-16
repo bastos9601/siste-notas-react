@@ -139,3 +139,17 @@ class Promedio(Base):
     # Relaciones
     alumno = relationship("Alumno", backref="promedios")
     asignatura = relationship("Asignatura", backref="promedios")
+
+class ReporteDocente(Base):
+    __tablename__ = "reportes_docentes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    docente_id = Column(Integer, ForeignKey("docentes.id"), nullable=False)
+    nombre_docente = Column(String(200), nullable=False)
+    asignatura = Column(String(200), nullable=False)
+    tipo_evaluacion = Column(String(100), nullable=False)
+    archivo_path = Column(String(500), nullable=False)
+    fecha_envio = Column(DateTime(timezone=True), server_default=func.now())
+
+    # Relaciones
+    docente = relationship("Docente")

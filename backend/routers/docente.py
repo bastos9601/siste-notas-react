@@ -12,6 +12,9 @@ from pydantic import BaseModel
 from typing import Optional, Any
 from auth import require_role, verify_password, get_password_hash
 from datetime import datetime
+import os
+import csv
+from models import ReporteDocente
 
 router = APIRouter()
 
@@ -998,12 +1001,57 @@ async def enviar_reporte_admin(
             detail="Docente no encontrado"
         )
     
-    # Aquí se implementaría la lógica para enviar el reporte al administrador
-    # Por ejemplo, guardar en una tabla de reportes o enviar por email
-    
+    # Preparar carpeta de reportes
+    backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    reports_dir = os.path.join(backend_dir, "reports")
+    try:
+        os.makedirs(reports_dir, exist_ok=True)
+    except Exception:
+        # Si falla usar directorio actual
+        reports_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "reports")
+        os.makedirs(reports_dir, exist_ok=True)
+
+    # Construir nombre de archivo
+    asignatura = str(reporte_data.get("asignatura", "asignatura")).replace(" ", "_")
+    tipo_eval = str(reporte_data.get("tipo_evaluacion", "evaluacion")).replace(" ", "_")
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"reporte_{docente.id}_{asignatura}_{tipo_eval}_{timestamp}.csv"
+    file_path = os.path.join(reports_dir, filename)
+
+    # Guardar CSV con los datos del reporte
+    columnas = ["alumno", "ciclo", "asignatura", "tipo_evaluacion", "calificacion"]
+    try:
+        with open(file_path, mode="w", newline="", encoding="utf-8") as csvfile:
+            writer = csv.DictWriter(csvfile, fieldnames=columnas)
+            writer.writeheader()
+            for fila in reporte_data.get("reporte", []):
+                writer.writerow({
+                    "alumno": fila.get("alumno", ""),
+                    "ciclo": fila.get("ciclo", ""),
+                    "asignatura": fila.get("asignatura", asignatura),
+                    "tipo_evaluacion": fila.get("tipo_evaluacion", tipo_eval),
+                    "calificacion": fila.get("calificacion", "")
+                })
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"No se pudo generar el archivo de reporte: {e}")
+
+    # Persistir registro en DB
+    reporte_record = ReporteDocente(
+        docente_id=docente.id,
+        nombre_docente=docente.nombre_completo,
+        asignatura=reporte_data.get("asignatura", ""),
+        tipo_evaluacion=reporte_data.get("tipo_evaluacion", ""),
+        archivo_path=file_path
+    )
+    db.add(reporte_record)
+    db.commit()
+    db.refresh(reporte_record)
+
     return {
         "message": "Reporte enviado al administrador exitosamente",
         "docente": docente.nombre_completo,
+        "reporte_id": reporte_record.id,
+        "archivo": filename,
         "fecha_envio": str(datetime.now())
     }
 

@@ -13,6 +13,7 @@ import AdminMatriculas from './pages/admin/AdminMatriculas';
 import AdminNotas from './pages/admin/AdminNotas';
 import AdminPerfil from './pages/admin/AdminPerfil';
 import AdminHistorial from './pages/admin/AdminHistorial';
+import AdminReportes from './pages/admin/AdminReportes';
 import DocenteAsignaturas from './pages/docente/DocenteAsignaturas';
 import DocenteNotas from './pages/docente/DocenteNotas';
 import DocenteAlumnos from './pages/docente/DocenteAlumnos';
@@ -64,6 +65,11 @@ function App() {
               <Route path="admin/notas" element={
                 <ProtectedRoute allowedRoles={['admin']}>
                   <AdminNotas />
+                </ProtectedRoute>
+              } />
+              <Route path="admin/reportes" element={
+                <ProtectedRoute allowedRoles={['admin']}>
+                  <AdminReportes />
                 </ProtectedRoute>
               } />
               <Route path="admin/perfil" element={

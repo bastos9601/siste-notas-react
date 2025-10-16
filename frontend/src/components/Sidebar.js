@@ -31,6 +31,7 @@ const Sidebar = ({ isOpen, onClose }) => {
         { name: 'Matricular Alumnos', href: '/admin/matriculas', icon: UserCheck, roles: ['admin'] },
         { name: 'Ver Notas', href: '/admin/notas', icon: FileText, roles: ['admin'] },
         { name: 'Historial Académico', href: '/admin/historial', icon: GraduationCap, roles: ['admin'] },
+        { name: 'Reportes', href: '/admin/reportes', icon: BarChart, roles: ['admin'] },
         { name: 'Mi Perfil', href: '/admin/perfil', icon: User, roles: ['admin'] }
       ];
     }
