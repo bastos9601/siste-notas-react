@@ -7,7 +7,7 @@ from models import Usuario
 from sqlalchemy.orm import Session
 import os
 
-# Asegurar que estamos en el directorio correcto
+# Asegurar que estamos en el  directorio correcto
 backend_dir = os.path.dirname(os.path.abspath(__file__))
 os.chdir(backend_dir)
 print(f"Directorio de trabajo actual: {os.getcwd()}")
