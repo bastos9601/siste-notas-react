@@ -820,3 +820,93 @@ async def send_grades_published_notification(email: str, nombre_alumno: str, asi
         return {"success": True, "message": f"Notificación enviada exitosamente a {email}"}
     except Exception as e:
         return {"success": False, "message": f"Error al enviar notificación: {str(e)}"}
+
+async def send_report_with_attachment(email: str, nombre_docente: str, asignatura: str, tipo_evaluacion: str, file_path: str):
+    """Enviar un reporte de notas con archivo CSV adjunto a un email arbitrario.
+
+    Parámetros:
+    - email: destino del correo
+    - nombre_docente: nombre del docente que envía
+    - asignatura: nombre de la asignatura del reporte
+    - tipo_evaluacion: tipo de evaluación del reporte
+    - file_path: ruta absoluta del archivo CSV generado
+    """
+
+    # Plantilla HTML sencilla para acompañar el adjunto
+    html_content = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset=\"utf-8\">
+        <title>Reporte de Notas</title>
+        <style>
+            body {{
+                font-family: Arial, sans-serif;
+                line-height: 1.6;
+                color: #333;
+                max-width: 700px;
+                margin: 0 auto;
+                padding: 20px;
+            }}
+            .header {{
+                background-color: #3b82f6;
+                color: white;
+                padding: 20px;
+                text-align: center;
+                border-radius: 8px 8px 0 0;
+            }}
+            .content {{
+                background-color: #f8fafc;
+                padding: 24px;
+                border-radius: 0 0 8px 8px;
+            }}
+            .info-box {{
+                background-color: #eff6ff;
+                border: 1px solid #3b82f6;
+                color: #1e40af;
+                padding: 12px;
+                border-radius: 8px;
+                margin: 16px 0;
+            }}
+            .footer {{
+                text-align: center;
+                margin-top: 24px;
+                color: #6b7280;
+                font-size: 13px;
+            }}
+        </style>
+    </head>
+    <body>
+        <div class=\"header\">
+            <h1>📄 Reporte de Notas</h1>
+        </div>
+        <div class=\"content\">
+            <p>Hola,</p>
+            <p>El docente <strong>{nombre_docente}</strong> ha compartido el reporte de la asignatura <strong>{asignatura}</strong> correspondiente a <strong>{tipo_evaluacion}</strong>.</p>
+            <div class=\"info-box\">El archivo CSV del reporte se adjunta a este correo.</div>
+            <p>Saludos,<br>Sistema de Gestión de Notas</p>
+        </div>
+        <div class=\"footer\">
+            <p>Este es un email automático del Sistema de Gestión de Notas</p>
+        </div>
+    </body>
+    </html>
+    """
+
+    # Crear el mensaje con adjunto
+    try:
+        message = MessageSchema(
+            subject=f"Reporte de Notas - {asignatura} ({tipo_evaluacion})",
+            recipients=[email],
+            body=html_content,
+            subtype="html",
+            attachments=[file_path] if file_path else None,
+        )
+    except Exception as e:
+        return {"success": False, "message": f"No se pudo preparar el mensaje: {str(e)}"}
+
+    try:
+        await fastmail.send_message(message)
+        return {"success": True, "message": f"Reporte enviado exitosamente a {email}"}
+    except Exception as e:
+        return {"success": False, "message": f"Error al enviar reporte: {str(e)}"}
