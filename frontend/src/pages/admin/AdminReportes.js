@@ -198,26 +198,20 @@ const AdminReportes = () => {
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{r.tipo_evaluacion}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{new Date(r.fecha_envio).toLocaleString()}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-2">
-                      <button
-                        className="inline-flex items-center px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700"
-                        onClick={() => handleDescargar(r)}
-                        title="Descargar CSV"
-                      >
-                        <Download className="mr-2 h-4 w-4" /> Descargar
-                      </button>
+                      {/*  */}
                       <button
                         className="inline-flex items-center px-3 py-2 rounded bg-gray-700 text-white hover:bg-gray-800"
                         onClick={() => handleVer(r)}
                         title="Ver PDF"
                       >
-                        <Eye className="mr-2 h-4 w-4" /> Ver
+                        <Eye className="mr-2 h-4 w-4" /> 
                       </button>
                       <button
                         className="inline-flex items-center px-3 py-2 rounded bg-red-600 text-white hover:bg-red-700"
                         onClick={() => handleEliminar(r)}
                         title="Eliminar reporte"
                       >
-                        <Trash className="mr-2 h-4 w-4" /> Eliminar
+                        <Trash className="mr-2 h-4 w-4" /> 
                       </button>
                     </td>
                   </tr>
