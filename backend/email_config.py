@@ -883,7 +883,7 @@ async def send_report_with_attachment(email: str, nombre_docente: str, asignatur
         <div class=\"content\">
             <p>Hola,</p>
             <p>El docente <strong>{nombre_docente}</strong> ha compartido el reporte de la asignatura <strong>{asignatura}</strong> correspondiente a <strong>{tipo_evaluacion}</strong>.</p>
-            <div class=\"info-box\">El archivo CSV del reporte se adjunta a este correo.</div>
+            <div class=\"info-box\">El archivo PDF del reporte se adjunta a este correo.</div>
             <p>Saludos,<br>Sistema de Gestión de Notas</p>
         </div>
         <div class=\"footer\">

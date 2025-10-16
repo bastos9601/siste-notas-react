@@ -310,20 +310,22 @@ const DocenteReportes = () => {
           </div>
         </div>
         
-        <button
-          className="flex items-center justify-center bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700"
-          onClick={handleEnviarReporte}
-        >
-          <Mail className="mr-2" size={18} />
-          Enviar Reporte al Administrador
-        </button>
-        <button
-          className="ml-3 flex items-center justify-center bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700"
-          onClick={handleOpenEmailModal}
-        >
-          <Mail className="mr-2" size={18} />
-          Enviar por correo
-        </button>
+        <div className="flex items-center space-x-3">
+          <button
+            className="flex items-center justify-center bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700"
+            onClick={handleEnviarReporte}
+          >
+            <Mail className="mr-2" size={18} />
+            Enviar Reporte al Administrador
+          </button>
+          <button
+            className="flex items-center justify-center bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700"
+            onClick={handleOpenEmailModal}
+          >
+            <Mail className="mr-2" size={18} />
+            Enviar por correo
+          </button>
+        </div>
       </div>
       
       {error && (
@@ -428,7 +430,7 @@ const DocenteReportes = () => {
           <div className="bg-white rounded-lg shadow-lg w-full max-w-md p-6">
             <h3 className="text-lg font-semibold mb-3">Enviar reporte por correo</h3>
             <p className="text-sm text-gray-600 mb-4">
-              Ingrese el correo electrónico al que desea enviar el reporte CSV.
+              Ingrese el correo electrónico al que desea enviar el reporte en PDF.
             </p>
             <label className="block text-sm font-medium text-gray-700 mb-1">Correo</label>
             <input
