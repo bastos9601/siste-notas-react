@@ -1,6 +1,7 @@
 from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from routers import auth, admin, docente, alumno, historial
+from auth import require_role  # para dependencias de rol en rutas directas
 from database import engine, Base, get_db
 from models import Usuario
 from sqlalchemy.orm import Session
@@ -136,6 +137,19 @@ async def debug_routes():
         except Exception:
             continue
     return {"count": len(routes), "routes": routes}
+
+# Ruta directa para enviar reporte por correo, como respaldo si el router no se actualiza
+@app.post("/docente/reportes/enviar-email")
+async def enviar_reporte_email_direct(
+    payload: dict,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_role("docente"))
+):
+    """Proxy que delega al handler del router de docente para enviar el reporte por email.
+    Esto garantiza que la ruta exista aun cuando el servidor no recargó correctamente el módulo docente.
+    """
+    from routers.docente import enviar_reporte_email as enviar
+    return await enviar(payload, db, current_user)
 
 if __name__ == "__main__":
     import uvicorn

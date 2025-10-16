@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import api from '../../services/api';
 import { FileText, FileSpreadsheet, Mail } from 'lucide-react';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 const DocenteReportes = () => {
   const { user } = useAuth();
@@ -12,6 +14,10 @@ const DocenteReportes = () => {
   const [reporteData, setReporteData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [showEmailModal, setShowEmailModal] = useState(false);
+  const [emailToSend, setEmailToSend] = useState('');
+  const [sendingEmail, setSendingEmail] = useState(false);
+  const [emailError, setEmailError] = useState('');
 
   // Cargar asignaturas al iniciar
   useEffect(() => {
@@ -116,6 +122,52 @@ const DocenteReportes = () => {
     }
   };
 
+  const handleOpenEmailModal = () => {
+    if (!selectedAsignatura || !selectedTipoEvaluacion) {
+      setError('Por favor, seleccione una asignatura y un tipo de evaluación para enviar el reporte.');
+      return;
+    }
+    setEmailError('');
+    setEmailToSend('');
+    setShowEmailModal(true);
+  };
+
+  const handleEnviarPorCorreo = async () => {
+    setEmailError('');
+    if (!reporteData) {
+      setError('No hay datos de reporte para enviar.');
+      return;
+    }
+    const simpleEmailRegex = /.+@.+\..+/;
+    if (!emailToSend || !simpleEmailRegex.test(emailToSend)) {
+      setEmailError('Ingrese un correo válido.');
+      return;
+    }
+    setSendingEmail(true);
+    try {
+      const payload = {
+        email: emailToSend,
+        asignatura: reporteData.asignatura,
+        tipo_evaluacion: reporteData.tipoEvaluacion,
+        reporte: (reporteData.alumnos || []).map((al) => ({
+          alumno: al.nombre_alumno,
+          ciclo: al.ciclo,
+          asignatura: al.asignatura,
+          tipo_evaluacion: reporteData.tipoEvaluacion,
+          calificacion: al.calificacion === '-' ? '' : al.calificacion,
+        })),
+      };
+      await api.post('/docente/reportes/enviar-email', payload);
+      alert(`Reporte enviado correctamente a ${emailToSend}.`);
+      setShowEmailModal(false);
+    } catch (err) {
+      console.error('Error al enviar por correo:', err);
+      setEmailError('Error al enviar el reporte por correo. Intente nuevamente.');
+    } finally {
+      setSendingEmail(false);
+    }
+  };
+
   const handleExportarExcel = () => {
     if (!reporteData) {
       setError('No hay datos para exportar.');
@@ -131,9 +183,90 @@ const DocenteReportes = () => {
       setError('No hay datos para exportar.');
       return;
     }
-    
-    // Aquí iría la lógica para exportar a PDF
-    alert('Exportación a PDF no implementada aún.');
+    try {
+      const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+
+      const brandColor = [37, 99, 235];
+      const titulo = 'Sistema de Notas';
+      const subtitulo = `Reporte: ${reporteData.tipoEvaluacion} - ${reporteData.asignatura}`;
+      const docenteNombre = user?.nombre || user?.nombre_completo || 'Docente';
+      const fecha = new Date().toLocaleString();
+
+      const pageWidth = doc.internal.pageSize.getWidth();
+
+      doc.setFillColor(...brandColor);
+      doc.rect(0, 0, pageWidth, 22, 'F');
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(16);
+      doc.text(titulo, 14, 12);
+      doc.setFontSize(11);
+      doc.text(subtitulo, 14, 18);
+
+      doc.setTextColor(33, 33, 33);
+      doc.setFontSize(11);
+      doc.text(`Docente: ${docenteNombre}`, 14, 28);
+      doc.text(`Fecha: ${fecha}`, 14, 34);
+      doc.setDrawColor(200, 200, 200);
+      doc.line(14, 38, pageWidth - 14, 38);
+
+      const head = [[
+        'Alumno',
+        'Ciclo',
+        'Asignatura',
+        'Tipo de Evaluación',
+        'Calificación'
+      ]];
+
+      const body = (reporteData.alumnos || []).map((al) => [
+        al.nombre_alumno,
+        al.ciclo,
+        al.asignatura,
+        reporteData.tipoEvaluacion,
+        typeof al.calificacion === 'number' ? Number(al.calificacion).toFixed(2) : String(al.calificacion)
+      ]);
+
+      autoTable(doc, {
+        head,
+        body,
+        startY: 42,
+        margin: { left: 14, right: 14, top: 42 },
+        styles: { fontSize: 10, cellPadding: 3, textColor: 33 },
+        headStyles: { fillColor: brandColor, textColor: 255, fontStyle: 'bold' },
+        alternateRowStyles: { fillColor: [245, 247, 250] },
+        theme: 'grid',
+        columnStyles: {
+          0: { cellWidth: 70 },
+          1: { cellWidth: 16, halign: 'center' },
+          2: { cellWidth: 40 },
+          3: { cellWidth: 35 },
+          4: { cellWidth: 25, halign: 'right' }
+        },
+        didDrawPage: (data) => {
+          const pw = doc.internal.pageSize.getWidth();
+          const ph = doc.internal.pageSize.getHeight();
+          doc.setFontSize(9);
+          doc.setTextColor(130, 130, 130);
+          doc.text(`Página ${data.pageNumber}`, 14, ph - 10);
+          doc.text('© Sistema de Notas', pw - 14, ph - 10, { align: 'right' });
+        }
+      });
+
+      const finalY = doc.lastAutoTable ? doc.lastAutoTable.finalY : 42;
+      const total = (reporteData.alumnos || []).length;
+      doc.setFontSize(11);
+      doc.setTextColor(33, 33, 33);
+      doc.text(`Total alumnos: ${total}`, 14, finalY + 8);
+
+      const safeAsignatura = (reporteData.asignatura || 'asignatura').replace(/\s+/g, '_');
+      const safeTipo = (reporteData.tipoEvaluacion || 'evaluacion').replace(/\s+/g, '_');
+      const timestamp = new Date().toISOString().slice(0, 19).replace(/[-:T]/g, '');
+      const fileName = `Reporte_${safeAsignatura}_${safeTipo}_${timestamp}.pdf`;
+
+      doc.save(fileName);
+    } catch (err) {
+      console.error('Error generando PDF:', err);
+      setError('Ocurrió un error generando el PDF.');
+    }
   };
 
   return (
@@ -183,6 +316,13 @@ const DocenteReportes = () => {
         >
           <Mail className="mr-2" size={18} />
           Enviar Reporte al Administrador
+        </button>
+        <button
+          className="ml-3 flex items-center justify-center bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700"
+          onClick={handleOpenEmailModal}
+        >
+          <Mail className="mr-2" size={18} />
+          Enviar por correo
         </button>
       </div>
       
@@ -280,6 +420,44 @@ const DocenteReportes = () => {
       ) : (
         <div className="bg-white rounded-lg shadow p-6 text-center text-gray-500">
           Seleccione una asignatura y un tipo de evaluación para generar un reporte.
+        </div>
+      )}
+
+      {showEmailModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-lg w-full max-w-md p-6">
+            <h3 className="text-lg font-semibold mb-3">Enviar reporte por correo</h3>
+            <p className="text-sm text-gray-600 mb-4">
+              Ingrese el correo electrónico al que desea enviar el reporte CSV.
+            </p>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Correo</label>
+            <input
+              type="email"
+              className="w-full p-2 border border-gray-300 rounded-md mb-2"
+              placeholder="correo@ejemplo.com"
+              value={emailToSend}
+              onChange={(e) => setEmailToSend(e.target.value)}
+            />
+            {emailError && (
+              <div className="text-red-600 text-sm mb-2">{emailError}</div>
+            )}
+            <div className="flex justify-end space-x-2 mt-4">
+              <button
+                className="px-4 py-2 rounded-md border border-gray-300 text-gray-700 bg-white hover:bg-gray-50"
+                onClick={() => setShowEmailModal(false)}
+                disabled={sendingEmail}
+              >
+                Cancelar
+              </button>
+              <button
+                className={`px-4 py-2 rounded-md text-white ${sendingEmail ? 'bg-blue-400' : 'bg-blue-600 hover:bg-blue-700'}`}
+                onClick={handleEnviarPorCorreo}
+                disabled={sendingEmail}
+              >
+                {sendingEmail ? 'Enviando...' : 'Enviar'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
