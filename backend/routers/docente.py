@@ -8,7 +8,7 @@ from schemas import (
     Alumno as AlumnoSchema,
     NotaCreate, NotaUpdate, Nota as NotaSchema
 )
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 from typing import Optional, Any
 from auth import require_role, verify_password, get_password_hash
 from datetime import datetime
@@ -1084,6 +1084,103 @@ async def enviar_reporte_admin(
         "docente": docente.nombre_completo,
         "reporte_id": reporte_record.id,
         "archivo": filename,
+        "fecha_envio": str(datetime.now())
+    }
+
+@router.post("/reportes/enviar-email")
+async def enviar_reporte_email(
+    payload: dict,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_role("docente"))
+):
+    """Generar el CSV del reporte y enviarlo por correo a la dirección indicada.
+
+    Espera un payload con:
+    - email: str
+    - asignatura: str
+    - tipo_evaluacion: str
+    - reporte: lista de filas con keys: alumno, ciclo, asignatura, tipo_evaluacion, calificacion
+    """
+    # Verificar que el docente existe
+    docente = db.query(Docente).filter(Docente.usuario_id == current_user.id).first()
+    if not docente:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Docente no encontrado"
+        )
+
+    email = payload.get("email")
+    try:
+        # Validación simple con EmailStr
+        _ = EmailStr(email)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Email inválido")
+
+    # Preparar carpeta de reportes
+    backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    reports_dir = os.path.join(backend_dir, "reports")
+    try:
+        os.makedirs(reports_dir, exist_ok=True)
+    except Exception:
+        reports_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "reports")
+        os.makedirs(reports_dir, exist_ok=True)
+
+    # Construir nombre de archivo
+    asignatura = str(payload.get("asignatura", "asignatura")).replace(" ", "_")
+    tipo_eval = str(payload.get("tipo_evaluacion", "evaluacion")).replace(" ", "_")
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"reporte_{docente.id}_{asignatura}_{tipo_eval}_{timestamp}.csv"
+    file_path = os.path.join(reports_dir, filename)
+
+    # Guardar CSV con los datos del reporte
+    columnas = ["alumno", "ciclo", "asignatura", "tipo_evaluacion", "calificacion"]
+    try:
+        with open(file_path, mode="w", newline="", encoding="utf-8") as csvfile:
+            writer = csv.DictWriter(csvfile, fieldnames=columnas)
+            writer.writeheader()
+            for fila in payload.get("reporte", []):
+                writer.writerow({
+                    "alumno": fila.get("alumno", ""),
+                    "ciclo": fila.get("ciclo", ""),
+                    "asignatura": fila.get("asignatura", asignatura),
+                    "tipo_evaluacion": fila.get("tipo_evaluacion", tipo_eval),
+                    "calificacion": fila.get("calificacion", "")
+                })
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"No se pudo generar el archivo de reporte: {e}")
+
+    # Enviar correo con adjunto
+    try:
+        from email_config import send_report_with_attachment
+        email_result = await send_report_with_attachment(
+            email=email,
+            nombre_docente=docente.nombre_completo,
+            asignatura=payload.get("asignatura", asignatura),
+            tipo_evaluacion=payload.get("tipo_evaluacion", tipo_eval),
+            file_path=file_path
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"No se pudo enviar el correo: {e}")
+
+    # Persistir registro en DB (opcionalmente marcar que se envió por correo)
+    reporte_record = ReporteDocente(
+        docente_id=docente.id,
+        nombre_docente=docente.nombre_completo,
+        asignatura=payload.get("asignatura", ""),
+        tipo_evaluacion=payload.get("tipo_evaluacion", ""),
+        archivo_path=file_path
+    )
+    db.add(reporte_record)
+    db.commit()
+    db.refresh(reporte_record)
+
+    return {
+        "message": email_result.get("message", "Reporte enviado"),
+        "success": email_result.get("success", False),
+        "docente": docente.nombre_completo,
+        "reporte_id": reporte_record.id,
+        "archivo": filename,
+        "email": email,
         "fecha_envio": str(datetime.now())
     }
 
