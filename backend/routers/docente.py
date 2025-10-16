@@ -18,6 +18,37 @@ from models import ReporteDocente
 
 router = APIRouter()
 
+# Utilidad para normalizar y mapear tipos de evaluación provenientes del frontend
+def _normalize_tipo_evaluacion(tipo: str) -> str:
+    """Normaliza el tipo de evaluación recibido (ids o nombres) a claves internas.
+    Retorna uno de: actividades, practicas, parciales, examen_final, promedio_final
+    """
+    if not tipo:
+        return ""
+    t = tipo.strip().lower()
+    mapping = {
+        # Actividades
+        "actividad": "actividades",
+        "actividades": "actividades",
+        # Práctica(s)
+        "practica": "practicas",
+        "práctica": "practicas",
+        "practicas": "practicas",
+        "prácticas": "practicas",
+        # Parcial(es)
+        "parcial": "parciales",
+        "parciales": "parciales",
+        # Examen Final
+        "examen final": "examen_final",
+        "final": "examen_final",
+        "examen_final": "examen_final",
+        # Promedio Final
+        "promedio": "promedio_final",
+        "promedio final": "promedio_final",
+        "promedio_final": "promedio_final",
+    }
+    return mapping.get(t, t)
+
 class PromedioCreate(BaseModel):
     alumno_id: int
     asignatura_id: int
@@ -907,69 +938,70 @@ async def obtener_reporte(
     ).fetchall()
     
     alumno_ids = [matricula[0] for matricula in matriculas_data]
-    
+
+    # Normalizar tipo de evaluación recibido y preparar mapeos
+    tipo_norm = _normalize_tipo_evaluacion(tipo_evaluacion)
+    promedio_cols = {
+        "actividades": "actividades",
+        "practicas": "practicas",
+        "parciales": "parciales",
+        "examen_final": "examen_final",
+        "promedio_final": "promedio_final",
+    }
+    # Tipos de notas en la tabla "notas" que respaldan cada categoría
+    nota_tipos_map = {
+        "actividades": [
+            "participacion", "tarea", "quiz", "laboratorio",
+            "proyecto", "trabajo_grupal", "exposicion"
+        ],
+        "practicas": ["practica"],
+        "parciales": ["examen_parcial", "parcial"],
+        "examen_final": ["examen_final"],
+        "promedio_final": [],
+    }
+
     # Obtener notas del tipo especificado para estos alumnos
     reporte_data = []
     for alumno_id in alumno_ids:
         alumno = db.query(Alumno).filter(Alumno.id == alumno_id).first()
         if not alumno:
             continue
-        
-        # Buscar la nota del tipo especificado
-        nota = db.query(Nota).filter(
-            Nota.alumno_id == alumno_id,
-            Nota.asignatura_id == asignatura_id,
-            Nota.tipo_nota == tipo_evaluacion
-        ).first()
-        
-        # Si es promedio final, buscar en la tabla de promedios
+        # Calcular calificación según promedio o, en su defecto, por notas registradas
         calificacion = 0  # Valor predeterminado
-        if tipo_evaluacion == "Promedio Final":
-            promedio = db.query(Promedio).filter(
-                Promedio.alumno_id == alumno_id,
-                Promedio.asignatura_id == asignatura_id
-            ).first()
-            if promedio and promedio.promedio_final is not None:
-                calificacion = promedio.promedio_final
-        elif tipo_evaluacion == "Actividades":
-            promedio = db.query(Promedio).filter(
-                Promedio.alumno_id == alumno_id,
-                Promedio.asignatura_id == asignatura_id
-            ).first()
-            if promedio and promedio.actividades is not None:
-                calificacion = promedio.actividades
-            elif nota and nota.calificacion is not None:
-                calificacion = nota.calificacion
-        elif tipo_evaluacion == "Prácticas":
-            promedio = db.query(Promedio).filter(
-                Promedio.alumno_id == alumno_id,
-                Promedio.asignatura_id == asignatura_id
-            ).first()
-            if promedio and promedio.practicas is not None:
-                calificacion = promedio.practicas
-            elif nota and nota.calificacion is not None:
-                calificacion = nota.calificacion
-        elif tipo_evaluacion == "Parciales":
-            promedio = db.query(Promedio).filter(
-                Promedio.alumno_id == alumno_id,
-                Promedio.asignatura_id == asignatura_id
-            ).first()
-            if promedio and promedio.parciales is not None:
-                calificacion = promedio.parciales
-            elif nota and nota.calificacion is not None:
-                calificacion = nota.calificacion
-        elif tipo_evaluacion == "Examen Final":
-            promedio = db.query(Promedio).filter(
-                Promedio.alumno_id == alumno_id,
-                Promedio.asignatura_id == asignatura_id
-            ).first()
-            if promedio and promedio.examen_final is not None:
-                calificacion = promedio.examen_final
-            elif nota and nota.calificacion is not None:
-                calificacion = nota.calificacion
-        elif nota and nota.calificacion is not None:
-            calificacion = nota.calificacion
-        
+        promedio = db.query(Promedio).filter(
+            Promedio.alumno_id == alumno_id,
+            Promedio.asignatura_id == asignatura_id
+        ).first()
+
+        # 1) Intentar obtener desde la tabla de promedios
+        col = promedio_cols.get(tipo_norm)
+        if promedio and col and getattr(promedio, col) is not None:
+            calificacion = getattr(promedio, col)
+        else:
+            # 2) Si no hay promedio, intentar respaldarse en notas registradas
+            tipos_nota = nota_tipos_map.get(tipo_norm, [])
+            if tipos_nota:
+                if tipo_norm == "actividades":
+                    # Promedio de todas las actividades registradas
+                    notas_act = db.query(Nota).filter(
+                        Nota.alumno_id == alumno_id,
+                        Nota.asignatura_id == asignatura_id,
+                        Nota.tipo_nota.in_(tipos_nota)
+                    ).all()
+                    if notas_act:
+                        valores = [n.calificacion for n in notas_act if n.calificacion is not None]
+                        if valores:
+                            calificacion = sum(valores) / len(valores)
+                else:
+                    # Tomar la última nota registrada del tipo correspondiente
+                    nota = db.query(Nota).filter(
+                        Nota.alumno_id == alumno_id,
+                        Nota.asignatura_id == asignatura_id,
+                        Nota.tipo_nota.in_(tipos_nota)
+                    ).order_by(Nota.fecha_registro.desc()).first()
+                    if nota and nota.calificacion is not None:
+                        calificacion = nota.calificacion
+
         # Agregar al reporte
         reporte_data.append({
             "alumno": alumno.nombre_completo,
