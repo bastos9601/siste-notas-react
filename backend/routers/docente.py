@@ -15,6 +15,10 @@ from datetime import datetime
 import os
 import csv
 from models import ReporteDocente
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+from reportlab.lib.pagesizes import letter
+from reportlab.lib import colors
+from reportlab.lib.styles import getSampleStyleSheet
 
 router = APIRouter()
 
@@ -1093,10 +1097,10 @@ async def enviar_reporte_email(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(require_role("docente"))
 ):
-    """Generar el CSV del reporte y enviarlo por correo a la dirección indicada.
+    """Generar el PDF del reporte y enviarlo por correo a la dirección indicada.
 
     Espera un payload con:
-    - email: str
+    - email/correo: str (se acepta cualquiera de las dos claves)
     - asignatura: str
     - tipo_evaluacion: str
     - reporte: lista de filas con keys: alumno, ciclo, asignatura, tipo_evaluacion, calificacion
@@ -1109,11 +1113,16 @@ async def enviar_reporte_email(
             detail="Docente no encontrado"
         )
 
-    email = payload.get("email")
-    try:
-        # Validación simple con EmailStr
-        _ = EmailStr(email)
-    except Exception:
+    # Aceptar distintas claves desde el frontend: "email" o "correo"
+    email = payload.get("email") or payload.get("correo") or payload.get("destinatario")
+    # Normalizar y validar de forma tolerante
+    if not email:
+        raise HTTPException(status_code=400, detail="Email requerido")
+    email = str(email).strip()
+    # Evitar validación estricta que puede fallar por espacios u otros caracteres
+    # Usar una validación sencilla para permitir correos válidos típicos
+    import re
+    if not re.match(r"^[^\s@]+@[^\s@]+\.[^\s@]+$", email):
         raise HTTPException(status_code=400, detail="Email inválido")
 
     # Preparar carpeta de reportes
@@ -1125,29 +1134,56 @@ async def enviar_reporte_email(
         reports_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "reports")
         os.makedirs(reports_dir, exist_ok=True)
 
-    # Construir nombre de archivo
+    # Construir nombre de archivo (PDF)
     asignatura = str(payload.get("asignatura", "asignatura")).replace(" ", "_")
     tipo_eval = str(payload.get("tipo_evaluacion", "evaluacion")).replace(" ", "_")
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"reporte_{docente.id}_{asignatura}_{tipo_eval}_{timestamp}.csv"
+    filename = f"reporte_{docente.id}_{asignatura}_{tipo_eval}_{timestamp}.pdf"
     file_path = os.path.join(reports_dir, filename)
 
-    # Guardar CSV con los datos del reporte
-    columnas = ["alumno", "ciclo", "asignatura", "tipo_evaluacion", "calificacion"]
+    # Generar PDF con los datos del reporte
     try:
-        with open(file_path, mode="w", newline="", encoding="utf-8") as csvfile:
-            writer = csv.DictWriter(csvfile, fieldnames=columnas)
-            writer.writeheader()
-            for fila in payload.get("reporte", []):
-                writer.writerow({
-                    "alumno": fila.get("alumno", ""),
-                    "ciclo": fila.get("ciclo", ""),
-                    "asignatura": fila.get("asignatura", asignatura),
-                    "tipo_evaluacion": fila.get("tipo_evaluacion", tipo_eval),
-                    "calificacion": fila.get("calificacion", "")
-                })
+        styles = getSampleStyleSheet()
+        story = []
+
+        titulo = f"Reporte de Notas - {payload.get('asignatura', asignatura)} ({payload.get('tipo_evaluacion', tipo_eval)})"
+        story.append(Paragraph(titulo, styles["Title"]))
+        story.append(Spacer(1, 12))
+        story.append(Paragraph(f"Docente: {docente.nombre_completo}", styles["Normal"]))
+        story.append(Paragraph(f"Fecha: {datetime.now().strftime('%d/%m/%Y %H:%M')}", styles["Normal"]))
+        story.append(Spacer(1, 12))
+
+        # Encabezados y filas
+        encabezados = ["Alumno", "Ciclo", "Asignatura", "Tipo Evaluación", "Calificación"]
+        filas = []
+        for fila in payload.get("reporte", []):
+            filas.append([
+                str(fila.get("alumno", "")),
+                str(fila.get("ciclo", "")),
+                str(fila.get("asignatura", payload.get("asignatura", asignatura))),
+                str(fila.get("tipo_evaluacion", payload.get("tipo_evaluacion", tipo_eval))),
+                str(fila.get("calificacion", "")),
+            ])
+
+        data = [encabezados] + (filas if filas else [["-","-","-","-","-"]])
+        table = Table(data, repeatRows=1)
+        table.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#f0f0f0')),
+            ('TEXTCOLOR', (0,0), (-1,0), colors.black),
+            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+            ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0,0), (-1,0), 10),
+            ('BOTTOMPADDING', (0,0), (-1,0), 8),
+            ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
+            ('FONTSIZE', (0,1), (-1,-1), 9),
+        ]))
+        story.append(table)
+
+        # Construir el documento
+        doc = SimpleDocTemplate(file_path, pagesize=letter)
+        doc.build(story)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"No se pudo generar el archivo de reporte: {e}")
+        raise HTTPException(status_code=500, detail=f"No se pudo generar el PDF del reporte: {e}")
 
     # Enviar correo con adjunto
     try:
