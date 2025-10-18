@@ -32,6 +32,16 @@ export const adminService = {
     return response.data;
   },
   
+  // Importación CSV de alumnos
+  async importarAlumnosCSV(file) {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await api.post('/admin/alumnos/import-csv', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    });
+    return response.data;
+  },
+  
   // Registrar siguiente ciclo (no matricular, solo actualizar campo ciclo)
   async registrarSiguienteCicloAlumno(id) {
     const response = await api.post(`/admin/alumnos/${id}/registrar-siguiente-ciclo`);

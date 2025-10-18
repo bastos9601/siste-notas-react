@@ -1,8 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
 from sqlalchemy.orm import Session, joinedload
 from typing import List
 from database import get_db
-from models import Usuario, Alumno, Docente, Asignatura, Nota, matriculas, HistorialAcademico, AsignaturaHistorial, NotaHistorial, ReporteDocente
+from models import Usuario, Alumno, Docente, Asignatura, Nota, Promedio, matriculas, HistorialAcademico, AsignaturaHistorial, NotaHistorial, ReporteDocente, ReporteArchivoDocente
 from schemas import (
     AlumnoCreate, AlumnoUpdate, Alumno as AlumnoSchema,
     DocenteCreate, Docente as DocenteSchema,
@@ -14,8 +14,12 @@ from auth import require_role, get_password_hash, verify_password
 from fastapi import BackgroundTasks
 from sqlalchemy.orm import Session
 from starlette.responses import FileResponse
+from fastapi.responses import StreamingResponse
 import os
 import re
+import csv
+import io
+import unicodedata
 from sqlalchemy import func
 
 # Reutilizaremos la misma regla de nota mínima que en el router de alumno
@@ -51,6 +55,17 @@ def get_next_cycle(ciclo: str) -> str:
 
     raise ValueError("No se pudo determinar el siguiente ciclo a partir del valor de 'ciclo'.")
 
+# Nuevo helper: obtener ciclo base sin sección
+def get_base_ciclo(ciclo: str) -> str:
+    text = str(ciclo).strip()
+    m2 = re.search(r"\b(I|II|III|IV|V|VI|VII|VIII|IX|X)\b", text, flags=re.IGNORECASE)
+    if m2:
+        return m2.group(1).upper()
+    m = re.search(r"(\d+)(?!.*\d)", text)
+    if m:
+        return m.group(1)
+    return text
+
 
 def alumno_aprobo_asignatura(db: Session, alumno_id: int, asignatura_id: int) -> bool:
     notas = db.query(Nota).filter(
@@ -79,7 +94,10 @@ def registrar_alumno_en_siguiente_ciclo(db: Session, alumno: Alumno) -> dict:
     ).fetchall()
 
     asignaturas_actuales_ids = [m.asignatura_id for m in matriculas_data]
-    asignaturas_actuales = db.query(Asignatura).filter(Asignatura.id.in_(asignaturas_actuales_ids), Asignatura.ciclo == ciclo_actual).all()
+    asignaturas_actuales = db.query(Asignatura).filter(
+        Asignatura.id.in_(asignaturas_actuales_ids),
+        Asignatura.ciclo == get_base_ciclo(ciclo_actual)
+    ).all()
 
     if not asignaturas_actuales:
         resultado["mensaje"] = "No se encontraron asignaturas del ciclo actual para evaluar."
@@ -160,7 +178,7 @@ def registrar_alumno_en_siguiente_ciclo(db: Session, alumno: Alumno) -> dict:
         )
         db.add(nota_cultura)
 
-    asignaturas_siguiente = db.query(Asignatura).filter(Asignatura.ciclo == next_ciclo).all()
+    asignaturas_siguiente = db.query(Asignatura).filter(Asignatura.ciclo == get_base_ciclo(next_ciclo)).all()
 
     # Actualizar solo el campo ciclo del alumno (registrar avance de ciclo)
     alumno.ciclo = next_ciclo
@@ -366,6 +384,9 @@ async def eliminar_alumno(
         
         # Eliminar todas las notas del alumno
         db.query(Nota).filter(Nota.alumno_id == alumno_id).delete()
+
+        # Eliminar todos los promedios del alumno
+        db.query(Promedio).filter(Promedio.alumno_id == alumno_id).delete()
         
         # Eliminar todas las matrículas del alumno
         db.execute(
@@ -435,6 +456,180 @@ async def listar_alumnos(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error al obtener alumnos: {str(e)}"
+        )
+
+@router.post("/alumnos/import-csv")
+async def importar_alumnos_csv(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_role("admin"))
+):
+    """Importar alumnos desde un archivo CSV.
+    Encabezados aceptados (flexibles): nombre_completo | nombre + apellidos, dni | documento,
+    ciclo | semestre, email | correo, [password | contraseña], [seccion | sección],
+    [fecha_nacimiento], [genero | sexo], [telefono | celular].
+    Detecta automáticamente el delimitador (coma, punto y coma, tab)."""
+    try:
+        raw = await file.read()
+        # Intentar decodificar como UTF-8, caer a Latin-1 si falla
+        try:
+            text = raw.decode("utf-8")
+        except UnicodeDecodeError:
+            text = raw.decode("latin-1")
+
+        # Detectar delimitador automáticamente
+        try:
+            sample = text[:4096]
+            dialect = csv.Sniffer().sniff(sample, delimiters=",;|\t")
+        except Exception:
+            dialect = csv.excel
+
+        reader = csv.DictReader(io.StringIO(text), dialect=dialect)
+        total = 0
+        inserted = 0
+        skipped = []
+        errors = []
+
+        # Normalizador de encabezados
+        def norm(s: str) -> str:
+            s = unicodedata.normalize("NFKD", str(s)).encode("ascii", "ignore").decode("ascii")
+            s = s.lower().strip()
+            for ch in ["_", "-", ".", ";", ":"]:
+                s = s.replace(ch, " ")
+            s = re.sub(r"\s+", " ", s)
+            return s
+
+        fieldnames = reader.fieldnames or []
+        norm_to_original = {norm(fn): fn for fn in fieldnames}
+
+        def find_header(*candidates):
+            for c in candidates:
+                key = norm(c)
+                if key in norm_to_original:
+                    return norm_to_original[key]
+            return None
+
+        for row in reader:
+            total += 1
+
+            # Mapear campos flexibles
+            h_nombre_completo = find_header(
+                "nombre completo", "nombres y apellidos", "nombre y apellidos",
+                "alumno", "estudiante", "nombreyapellido"
+            )
+            h_nombre = find_header("nombre", "nombres")
+            h_apellidos = find_header("apellidos", "apellido")
+            h_dni = find_header(
+                "dni", "documento", "numero documento", "nro documento",
+                "num documento", "num doc", "numero de documento", "cedula", "identidad"
+            )
+            h_ciclo = find_header("ciclo", "semestre", "periodo", "nivel")
+            h_seccion = find_header("seccion", "seccion", "seccion", "seccion", "seccion", "seccion", "sección", "grupo", "paralelo", "sec")
+            h_email = find_header("email", "correo", "correo electronico", "e mail", "mail")
+            h_password = find_header("password", "contrasena", "contraseña", "clave")
+            h_telefono = find_header("telefono", "celular", "tel")
+            h_genero = find_header("genero", "sexo")
+            h_fnac = find_header("fecha nacimiento", "fechanacimiento", "fecha de nacimiento", "nacimiento", "f nacimiento")
+
+            # Obtener valores
+            if h_nombre_completo:
+                nombre = str(row.get(h_nombre_completo) or "").strip()
+            else:
+                nombre = (" ".join([
+                    str(row.get(h_nombre) or "").strip(),
+                    str(row.get(h_apellidos) or "").strip()
+                ])).strip()
+
+            dni = str(row.get(h_dni) or "").strip()
+            ciclo_raw = str(row.get(h_ciclo) or "").strip()
+            email = str(row.get(h_email) or "").strip().lower()
+            password = str(row.get(h_password) or "").strip()
+            seccion = str(row.get(h_seccion) or "").strip().upper()
+            telefono = (row.get(h_telefono) or None)
+            genero = (row.get(h_genero) or None)
+
+            # Fecha de nacimiento opcional en diferentes formatos
+            fecha_nacimiento = None
+            fn_val = row.get(h_fnac) if h_fnac else None
+            if fn_val:
+                try:
+                    from datetime import datetime
+                    for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y", "%m/%d/%Y"):
+                        try:
+                            fecha_nacimiento = datetime.strptime(str(fn_val).strip(), fmt).date()
+                            break
+                        except Exception:
+                            pass
+                except Exception:
+                    fecha_nacimiento = None
+
+            # Validaciones básicas
+            if not nombre or not dni or not ciclo_raw or not email:
+                skipped.append({
+                    "row": total, "dni": dni, "email": email,
+                    "reason": "Campos obligatorios faltantes"
+                })
+                continue
+
+            # Inferir sección desde el ciclo si no viene explícita
+            ciclo_base = get_base_ciclo(ciclo_raw)
+            if not seccion:
+                msec = re.search(r"([A-Z])$", ciclo_raw.strip(), flags=re.IGNORECASE)
+                if msec:
+                    seccion = msec.group(1).upper()
+
+            ciclo_final = ciclo_base if not seccion or seccion.lower() in ["", "sin seccion", "sin sección"] else f"{ciclo_base} {seccion.upper()}"
+
+            # Evitar duplicados por DNI o email
+            if db.query(Alumno).filter(Alumno.dni == dni).first():
+                skipped.append({"row": total, "dni": dni, "email": email, "reason": "DNI ya existente"})
+                continue
+            if db.query(Usuario).filter(Usuario.email == email).first():
+                skipped.append({"row": total, "dni": dni, "email": email, "reason": "Email ya existente"})
+                continue
+
+            # Generar password si no viene
+            if not password:
+                import secrets, string
+                chars = string.ascii_letters + string.digits
+                password = ''.join(secrets.choice(chars) for _ in range(8))
+            hashed_password = get_password_hash(password)
+
+            # Crear usuario y alumno
+            db_user = Usuario(
+                nombre=nombre.split()[0] if nombre else "Alumno",
+                email=email,
+                password_hash=hashed_password,
+                rol="alumno"
+            )
+            db.add(db_user)
+            db.flush()
+
+            db_alumno = Alumno(
+                nombre_completo=nombre,
+                dni=dni,
+                fecha_nacimiento=fecha_nacimiento,
+                genero=genero,
+                telefono=telefono,
+                ciclo=ciclo_final,
+                usuario_id=db_user.id
+            )
+            db.add(db_alumno)
+            db.commit()
+            inserted += 1
+
+        return {
+            "total_rows": total,
+            "inserted": inserted,
+            "skipped": len(skipped),
+            "skipped_details": skipped,
+            "errors": errors
+        }
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al importar CSV: {str(e)}"
         )
 
 @router.get("/alumnos/{alumno_id}", response_model=AlumnoSchema)
@@ -703,7 +898,7 @@ async def listar_asignaturas(
         # Consulta simple
         query = db.query(Asignatura)
         if ciclo:
-            query = query.filter(Asignatura.ciclo == ciclo)
+            query = query.filter(Asignatura.ciclo == get_base_ciclo(ciclo))
         asignaturas = query.all()
         
         # Convertir a diccionario manualmente
@@ -836,7 +1031,7 @@ async def matricular_alumno(
         )
     
     # Obtener todas las asignaturas del ciclo del alumno
-    asignaturas_ciclo = db.query(Asignatura).filter(Asignatura.ciclo == alumno.ciclo).all()
+    asignaturas_ciclo = db.query(Asignatura).filter(Asignatura.ciclo == get_base_ciclo(alumno.ciclo)).all()
     
     if not asignaturas_ciclo:
         raise HTTPException(
@@ -987,8 +1182,10 @@ async def listar_todas_notas(
     """Listar todas las notas del sistema (solo admin)"""
     # Filtrar notas para que solo se muestren las del ciclo actual de cada alumno
     notas = db.query(Nota).join(Alumno).join(Asignatura).filter(
-        Asignatura.ciclo == Alumno.ciclo
+        Nota.publicada == True
     ).all()
+    # Filtrar en Python para igualar ciclo base del alumno
+    notas = [n for n in notas if get_base_ciclo(n.alumno.ciclo) == n.asignatura.ciclo]
     
     notas_data = []
     for nota in notas:
@@ -1285,10 +1482,24 @@ async def descargar_archivo_reporte(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(require_role("admin"))
 ):
-    """Descargar el archivo CSV del reporte enviado por un docente."""
+    """Descargar el archivo del reporte enviado por un docente.
+    Si el archivo fue guardado en BD, se transmite en streaming. Si es un path, se sirve desde disco.
+    """
     reporte = db.query(ReporteDocente).filter(ReporteDocente.id == reporte_id).first()
     if not reporte:
         raise HTTPException(status_code=404, detail="Reporte no encontrado")
+
+    # Si el archivo fue guardado en BD
+    if isinstance(reporte.archivo_path, str) and reporte.archivo_path.startswith("db:"):
+        archivo = db.query(ReporteArchivoDocente).filter(ReporteArchivoDocente.reporte_id == reporte.id).order_by(ReporteArchivoDocente.id.desc()).first()
+        if not archivo:
+            raise HTTPException(status_code=404, detail="Archivo del reporte no encontrado en la base de datos")
+        bytes_io = io.BytesIO(archivo.content)
+        media_type = archivo.mime_type or "text/csv"
+        headers = {"Content-Disposition": f"attachment; filename=\"{archivo.filename}\""}
+        return StreamingResponse(bytes_io, media_type=media_type, headers=headers)
+
+    # Compatibilidad: si es un path en disco
     try:
         return FileResponse(path=reporte.archivo_path, filename=os.path.basename(reporte.archivo_path))
     except Exception:
@@ -1305,13 +1516,20 @@ async def eliminar_reporte_docente(
     if not reporte:
         raise HTTPException(status_code=404, detail="Reporte no encontrado")
 
-    # Intentar eliminar el archivo en disco si existe
+    # Eliminar archivo según origen (BD o disco)
     file_removed = False
     try:
-        if reporte.archivo_path and os.path.exists(reporte.archivo_path):
-            os.remove(reporte.archivo_path)
-            file_removed = True
-    except Exception as e:
+        if isinstance(reporte.archivo_path, str) and reporte.archivo_path.startswith("db:"):
+            # Eliminar filas de archivo almacenado en BD
+            archivos = db.query(ReporteArchivoDocente).filter(ReporteArchivoDocente.reporte_id == reporte.id).all()
+            for a in archivos:
+                db.delete(a)
+            file_removed = True if archivos else False
+        else:
+            if reporte.archivo_path and os.path.exists(reporte.archivo_path):
+                os.remove(reporte.archivo_path)
+                file_removed = True
+    except Exception:
         # No bloquear la eliminación del registro si falla borrar el archivo
         file_removed = False
 

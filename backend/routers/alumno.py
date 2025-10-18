@@ -59,6 +59,17 @@ def get_next_cycle(ciclo: str) -> str:
     # Si no pudimos inferir nada, lanzar error para que el llamador lo maneje
     raise ValueError("No se pudo determinar el siguiente ciclo a partir del valor de 'ciclo'.")
 
+# Helper para extraer el ciclo base sin sección
+def get_base_ciclo(ciclo: str) -> str:
+    text = str(ciclo).strip()
+    m2 = re.search(r"\b(I|II|III|IV|V|VI|VII|VIII|IX|X)\b", text, flags=re.IGNORECASE)
+    if m2:
+        return m2.group(1).upper()
+    m = re.search(r"(\d+)(?!.*\d)", text)
+    if m:
+        return m.group(1)
+    return text
+
 
 def alumno_aprobo_asignatura(db: Session, alumno_id: int, asignatura_id: int) -> bool:
     """Determina si el alumno aprobó una asignatura: existe al menos una nota publicada >= PASSING_GRADE."""
@@ -93,7 +104,10 @@ def matricular_alumno_en_siguiente_ciclo(db: Session, alumno: Alumno) -> dict:
 
     asignaturas_actuales_ids = [m.asignatura_id for m in matriculas_data]
     # Filtrar sólo aquellas asignaturas que pertenecen al ciclo del alumno
-    asignaturas_actuales = db.query(Asignatura).filter(Asignatura.id.in_(asignaturas_actuales_ids), Asignatura.ciclo == alumno.ciclo).all()
+    asignaturas_actuales = db.query(Asignatura).filter(
+        Asignatura.id.in_(asignaturas_actuales_ids),
+        Asignatura.ciclo == get_base_ciclo(alumno.ciclo)
+    ).all()
 
     # Si no tiene asignaturas en el ciclo actual, no se puede avanzar
     if not asignaturas_actuales:
@@ -108,7 +122,7 @@ def matricular_alumno_en_siguiente_ciclo(db: Session, alumno: Alumno) -> dict:
 
     # Si llegó aquí, aprobó todas las asignaturas del ciclo actual
     # Buscar asignaturas del siguiente ciclo
-    asignaturas_siguiente = db.query(Asignatura).filter(Asignatura.ciclo == next_ciclo).all()
+    asignaturas_siguiente = db.query(Asignatura).filter(Asignatura.ciclo == get_base_ciclo(next_ciclo)).all()
     # Actualizamos el campo ciclo del alumno para registrar que pasó al siguiente ciclo.
     alumno.ciclo = next_ciclo
     db.commit()
@@ -182,7 +196,7 @@ async def mis_asignaturas(
         asignatura = db.query(Asignatura).filter(Asignatura.id == matricula.asignatura_id).first()
         if asignatura:
             # Filtrar solo por asignaturas del ciclo actual si se solicita
-            if not solo_ciclo_actual or asignatura.ciclo == alumno.ciclo:
+            if not solo_ciclo_actual or asignatura.ciclo == get_base_ciclo(alumno.ciclo):
                 asignaturas.append(asignatura)
     
     return asignaturas
@@ -207,7 +221,7 @@ async def mis_notas(
     if solo_ciclo_actual:
         # Filtrar por asignaturas del ciclo actual
         query = query.join(Asignatura, Nota.asignatura_id == Asignatura.id).filter(
-            Asignatura.ciclo == alumno.ciclo
+            Asignatura.ciclo == get_base_ciclo(alumno.ciclo)
         )
     
     notas = query.all()
@@ -309,7 +323,7 @@ async def promedio_por_asignatura(
         asignatura = db.query(Asignatura).filter(Asignatura.id == matricula.asignatura_id).first()
         if asignatura:
             # Filtrar por ciclo actual si se solicita
-            if solo_ciclo_actual and asignatura.ciclo != alumno.ciclo:
+            if solo_ciclo_actual and asignatura.ciclo != get_base_ciclo(alumno.ciclo):
                 continue
                 
             notas = db.query(Nota).filter(

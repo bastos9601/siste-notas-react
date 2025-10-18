@@ -13,8 +13,20 @@ from schemas import (
 )
 from auth import require_role, get_current_user
 from sqlalchemy import func, and_
+import re
 
 router = APIRouter()
+
+# Helper para extraer el ciclo base sin sección
+def get_base_ciclo(ciclo: str) -> str:
+    text = str(ciclo).strip()
+    m2 = re.search(r"\b(I|II|III|IV|V|VI|VII|VIII|IX|X)\b", text, flags=re.IGNORECASE)
+    if m2:
+        return m2.group(1).upper()
+    m = re.search(r"(\d+)(?!.*\d)", text)
+    if m:
+        return m.group(1)
+    return text
 
 # Obtener historial académico del alumno actual
 @router.get("/alumnos/me/historial", response_model=List[HistorialAcademicoSchema])
@@ -47,24 +59,25 @@ def get_mi_historial_academico(
         
         # Filtrar asignaturas que no son del ciclo actual
         ciclo_actual = alumno.ciclo
+        ciclo_actual_base = get_base_ciclo(ciclo_actual)
         
         # Determinar el ciclo anterior
         ciclo_anterior = ""
-        if ciclo_actual == "II":
+        if ciclo_actual_base == "II":
             ciclo_anterior = "I"
-        elif ciclo_actual == "III":
+        elif ciclo_actual_base == "III":
             ciclo_anterior = "II"
-        elif ciclo_actual == "IV":
+        elif ciclo_actual_base == "IV":
             ciclo_anterior = "III"
-        elif ciclo_actual == "V":
+        elif ciclo_actual_base == "V":
             ciclo_anterior = "IV"
-        elif ciclo_actual == "VI":
+        elif ciclo_actual_base == "VI":
             ciclo_anterior = "V"
         else:
             ciclo_anterior = ""
             
         # Si el alumno está en ciclo II, asegurarse de que las notas del ciclo I aparezcan
-        if ciclo_actual == "II":
+        if ciclo_actual_base == "II":
             ciclo_anterior = "I"
         
         # Crear un historial para el ciclo anterior
@@ -78,7 +91,7 @@ def get_mi_historial_academico(
         # Agregar asignaturas al historial (las del ciclo anterior)
         for asignatura in asignaturas:
             # Incluir asignaturas del ciclo anterior
-            if asignatura.ciclo == ciclo_anterior or (ciclo_actual == "II" and asignatura.ciclo == "I"):
+            if asignatura.ciclo == ciclo_anterior or (ciclo_actual_base == "II" and asignatura.ciclo == "I"):
                 # Calcular promedio de notas para esta asignatura
                 promedio_query = db.query(func.avg(Nota.calificacion)).filter(
                     Nota.alumno_id == alumno.id,
@@ -173,12 +186,13 @@ def create_historial_academico(
         )
     
     # Obtener el ciclo actual del alumno
-    ciclo_actual = alumno.ciclo
+    ciclo_actual_full = alumno.ciclo
+    ciclo_actual_base = get_base_ciclo(ciclo_actual_full)
     
     # Crear el historial académico
     historial = HistorialAcademico(
         alumno_id=alumno_id,
-        ciclo=ciclo_actual
+        ciclo=ciclo_actual_full
     )
     db.add(historial)
     db.flush()  # Para obtener el ID del historial
@@ -189,7 +203,7 @@ def create_historial_academico(
             db.query(matriculas.c.asignatura_id)
             .filter(matriculas.c.alumno_id == alumno_id)
         ),
-        Asignatura.ciclo == ciclo_actual
+        Asignatura.ciclo == ciclo_actual_base
     ).all()
     
     # Para cada asignatura, calcular el promedio y guardar en el historial
