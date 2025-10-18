@@ -30,6 +30,19 @@ const AlumnoPromedios = () => {
     }
   };
 
+  const handleDescargarPromediosPDF = async () => {
+    try {
+      const response = await alumnoService.descargarPromediosPorAsignaturaPDF(true);
+      const blob = new Blob([response.data], { type: 'application/pdf' });
+      const url = window.URL.createObjectURL(blob);
+      const viewer = window.open(url, '_blank');
+      if (viewer) viewer.focus();
+    } catch (error) {
+      console.error('Error al visualizar el PDF de promedios:', error);
+      alert('No se pudo visualizar el PDF de promedios. Inténtalo más tarde.');
+    }
+  };
+
   const getGradeColor = (promedio) => {
     if (promedio >= 18) return 'text-green-600';
     if (promedio >= 14) return 'text-blue-600';
@@ -178,7 +191,16 @@ const AlumnoPromedios = () => {
       <div className="card">
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-xl font-semibold text-gray-900">Promedios por Asignatura</h2>
-          <BarChart3 className="h-6 w-6 text-gray-400" />
+          <div className="flex items-center space-x-3">
+            <button
+              onClick={handleDescargarPromediosPDF}
+              className="btn-secondary px-3 py-1 text-xs"
+              title="Ver promedios por asignatura en PDF"
+            >
+              Ver PDF
+            </button>
+            <BarChart3 className="h-6 w-6 text-gray-400" />
+          </div>
         </div>
         
         {promediosPorAsignatura.length === 0 ? (
