@@ -1,6 +1,8 @@
 from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from routers import auth, admin, docente, alumno, historial
+# Añadir import del nuevo router de chatbot
+from routers import chatbot
 from auth import require_role  # para dependencias de rol en rutas directas
 from database import engine, Base, get_db
 from models import Usuario
@@ -38,6 +40,8 @@ app.include_router(admin.router, prefix="/admin", tags=["administrador"])
 app.include_router(docente.router, prefix="/docente", tags=["docente"])
 app.include_router(alumno.router, prefix="/alumno", tags=["alumno"])
 app.include_router(historial.router, prefix="/historial", tags=["historial académico"])
+# Incluir el router de chatbot
+app.include_router(chatbot.router, prefix="", tags=["chatbot"])
 
 @app.get("/")
 async def root():

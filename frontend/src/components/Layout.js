@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import Header from './Header';
+import ChatBot from './ChatBot';
 
 const Layout = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -35,6 +36,9 @@ const Layout = () => {
           <Outlet />
         </main>
       </div>
+
+      {/* ChatBot flotante disponible en todos los paneles */}
+      <ChatBot />
     </div>
   );
 };
