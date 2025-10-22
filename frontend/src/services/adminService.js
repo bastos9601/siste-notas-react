@@ -32,6 +32,16 @@ export const adminService = {
     return response.data;
   },
   
+  // Importación CSV de alumnos
+  async importarAlumnosCSV(file) {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await api.post('/admin/alumnos/import-csv', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    });
+    return response.data;
+  },
+  
   // Registrar siguiente ciclo (no matricular, solo actualizar campo ciclo)
   async registrarSiguienteCicloAlumno(id) {
     const response = await api.post(`/admin/alumnos/${id}/registrar-siguiente-ciclo`);
@@ -140,6 +150,14 @@ export const adminService = {
   // Historial Académico
   async getHistorialAcademicoAlumno(alumnoId) {
     const response = await api.get(`/historial/alumnos/${alumnoId}/historial`);
+    return response.data;
+  },
+
+  async deleteHistorialAcademicoAlumno(alumnoId, ciclo = null) {
+    const url = ciclo 
+      ? `/historial/alumnos/${alumnoId}/historial?ciclo=${encodeURIComponent(ciclo)}`
+      : `/historial/alumnos/${alumnoId}/historial`;
+    const response = await api.delete(url);
     return response.data;
   }
 };

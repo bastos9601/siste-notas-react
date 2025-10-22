@@ -50,19 +50,19 @@ const AdminReportes = () => {
     try {
       const resp = await api.get(`/admin/reportes/${reporte.id}/archivo`, { responseType: 'blob' });
 
-      // Detectar tipo de archivo por cabecera o extensión
-      const contentType = (resp.headers && (resp.headers['content-type'] || resp.headers['Content-Type'])) || resp.data?.type || '';
-      const ext = (reporte.archivo_path || '').split('.').pop()?.toLowerCase() || '';
-      const isPdf = contentType.includes('pdf') || ext === 'pdf';
+      // Determinar tipo de archivo por Content-Type o por extensión del nombre
+      const contentType = (resp.headers && (resp.headers['content-type'] || resp.headers['Content-Type'])) || '';
+      const nombre = reporte.archivo_path?.split('\\').pop() || reporte.archivo_path?.split('/').pop() || '';
+      const ext = (nombre && nombre.includes('.')) ? nombre.split('.').pop().toLowerCase() : '';
 
-      if (isPdf) {
-        // Abrir el PDF directamente
+      // Si es un PDF ya generado por el docente, abrirlo directamente
+      if (contentType.includes('pdf') || ext === 'pdf') {
         const pdfUrl = window.URL.createObjectURL(resp.data);
         window.open(pdfUrl, '_blank');
         return;
       }
 
-      // Si no es PDF, asumir CSV/texto y renderizar un PDF con jsPDF
+      // Caso contrario, asumimos CSV y lo convertimos a PDF para visualizar
       const blobToText = (blob) => {
         if (blob && typeof blob.text === 'function') {
           return blob.text();
@@ -115,8 +115,8 @@ const AdminReportes = () => {
           const gradeColIdx = headers.findIndex(h => /calific/i.test(h));
           if (data.section === 'body' && data.column.index === gradeColIdx) {
             const rawText = Array.isArray(data.cell.text) ? data.cell.text.join(' ') : String(data.cell.text || data.cell.raw || '');
-            const normalizedTxt = rawText.replace(',', '.');
-            const match = normalizedTxt.match(/-?\d+(?:\.\d+)?/);
+            const normalizedText = rawText.replace(',', '.');
+            const match = normalizedText.match(/-?\d+(?:\.\d+)?/);
             const grade = match ? parseFloat(match[0]) : NaN;
 
             if (!Number.isNaN(grade)) {

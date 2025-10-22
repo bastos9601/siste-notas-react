@@ -14,7 +14,8 @@ from auth import require_role, verify_password, get_password_hash
 from datetime import datetime
 import os
 import csv
-from models import ReporteDocente
+import io
+from models import ReporteDocente, ReporteArchivoDocente
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 from reportlab.lib.pagesizes import letter
 from reportlab.lib import colors
@@ -1052,36 +1053,47 @@ async def enviar_reporte_admin(
     tipo_eval = str(reporte_data.get("tipo_evaluacion", "evaluacion")).replace(" ", "_")
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = f"reporte_{docente.id}_{asignatura}_{tipo_eval}_{timestamp}.csv"
-    file_path = os.path.join(reports_dir, filename)
 
-    # Guardar CSV con los datos del reporte
+    # Generar CSV en memoria
     columnas = ["alumno", "ciclo", "asignatura", "tipo_evaluacion", "calificacion"]
     try:
-        with open(file_path, mode="w", newline="", encoding="utf-8") as csvfile:
-            writer = csv.DictWriter(csvfile, fieldnames=columnas)
-            writer.writeheader()
-            for fila in reporte_data.get("reporte", []):
-                writer.writerow({
-                    "alumno": fila.get("alumno", ""),
-                    "ciclo": fila.get("ciclo", ""),
-                    "asignatura": fila.get("asignatura", asignatura),
-                    "tipo_evaluacion": fila.get("tipo_evaluacion", tipo_eval),
-                    "calificacion": fila.get("calificacion", "")
-                })
+        buffer = io.StringIO(newline="")
+        writer = csv.DictWriter(buffer, fieldnames=columnas)
+        writer.writeheader()
+        for fila in reporte_data.get("reporte", []):
+            writer.writerow({
+                "alumno": fila.get("alumno", ""),
+                "ciclo": fila.get("ciclo", ""),
+                "asignatura": fila.get("asignatura", asignatura),
+                "tipo_evaluacion": fila.get("tipo_evaluacion", tipo_eval),
+                "calificacion": fila.get("calificacion", "")
+            })
+        csv_bytes = buffer.getvalue().encode("utf-8")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"No se pudo generar el archivo de reporte: {e}")
+        raise HTTPException(status_code=500, detail=f"No se pudo generar el archivo de reporte en memoria: {e}")
 
-    # Persistir registro en DB
+    # Guardar registro del reporte (indicando que el archivo está en BD)
     reporte_record = ReporteDocente(
         docente_id=docente.id,
         nombre_docente=docente.nombre_completo,
         asignatura=reporte_data.get("asignatura", ""),
         tipo_evaluacion=reporte_data.get("tipo_evaluacion", ""),
-        archivo_path=file_path
+        archivo_path=f"db:{filename}"
     )
     db.add(reporte_record)
     db.commit()
     db.refresh(reporte_record)
+
+    # Guardar contenido del archivo en la tabla de archivos
+    archivo_record = ReporteArchivoDocente(
+        reporte_id=reporte_record.id,
+        filename=filename,
+        mime_type="text/csv",
+        content=csv_bytes
+    )
+    db.add(archivo_record)
+    db.commit()
+    db.refresh(archivo_record)
 
     return {
         "message": "Reporte enviado al administrador exitosamente",
@@ -1125,23 +1137,13 @@ async def enviar_reporte_email(
     if not re.match(r"^[^\s@]+@[^\s@]+\.[^\s@]+$", email):
         raise HTTPException(status_code=400, detail="Email inválido")
 
-    # Preparar carpeta de reportes
-    backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    reports_dir = os.path.join(backend_dir, "reports")
-    try:
-        os.makedirs(reports_dir, exist_ok=True)
-    except Exception:
-        reports_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "reports")
-        os.makedirs(reports_dir, exist_ok=True)
-
     # Construir nombre de archivo (PDF)
     asignatura = str(payload.get("asignatura", "asignatura")).replace(" ", "_")
     tipo_eval = str(payload.get("tipo_evaluacion", "evaluacion")).replace(" ", "_")
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = f"reporte_{docente.id}_{asignatura}_{tipo_eval}_{timestamp}.pdf"
-    file_path = os.path.join(reports_dir, filename)
 
-    # Generar PDF con los datos del reporte
+    # Generar PDF con los datos del reporte en memoria
     try:
         styles = getSampleStyleSheet()
         story = []
@@ -1179,36 +1181,50 @@ async def enviar_reporte_email(
         ]))
         story.append(table)
 
-        # Construir el documento
-        doc = SimpleDocTemplate(file_path, pagesize=letter)
+        # Construir el PDF en memoria
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=letter)
         doc.build(story)
+        pdf_bytes = buffer.getvalue()
+        buffer.close()
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"No se pudo generar el PDF del reporte: {e}")
 
-    # Enviar correo con adjunto
+    # Enviar correo con adjunto (bytes en memoria)
     try:
-        from email_config import send_report_with_attachment
-        email_result = await send_report_with_attachment(
+        from email_config import send_report_with_attachment_bytes
+        email_result = await send_report_with_attachment_bytes(
             email=email,
             nombre_docente=docente.nombre_completo,
             asignatura=payload.get("asignatura", asignatura),
             tipo_evaluacion=payload.get("tipo_evaluacion", tipo_eval),
-            file_path=file_path
+            filename=filename,
+            file_bytes=pdf_bytes,
+            mime_type="application/pdf",
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"No se pudo enviar el correo: {e}")
 
-    # Persistir registro en DB (opcionalmente marcar que se envió por correo)
+    # Persistir registro en DB y archivo del reporte en BD
     reporte_record = ReporteDocente(
         docente_id=docente.id,
         nombre_docente=docente.nombre_completo,
         asignatura=payload.get("asignatura", ""),
         tipo_evaluacion=payload.get("tipo_evaluacion", ""),
-        archivo_path=file_path
+        archivo_path=f"db:{filename}",
     )
     db.add(reporte_record)
     db.commit()
     db.refresh(reporte_record)
+
+    archivo_record = ReporteArchivoDocente(
+        reporte_id=reporte_record.id,
+        filename=filename,
+        mime_type="application/pdf",
+        content=pdf_bytes,
+    )
+    db.add(archivo_record)
+    db.commit()
 
     return {
         "message": email_result.get("message", "Reporte enviado"),

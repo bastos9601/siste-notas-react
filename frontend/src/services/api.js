@@ -1,6 +1,16 @@
 import axios from 'axios';
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+// Permitir override dinámico vía localStorage sin necesidad de reconstruir
+let storedApiUrl = null;
+try {
+  if (typeof window !== 'undefined' && window.localStorage) {
+    storedApiUrl = localStorage.getItem('api_url');
+  }
+} catch (_) {
+  // ignorar si localStorage no está disponible
+}
+
+const API_BASE_URL = storedApiUrl || process.env.REACT_APP_API_URL || 'http://localhost:8000';
 
 const api = axios.create({
   baseURL: API_BASE_URL,

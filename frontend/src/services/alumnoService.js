@@ -44,5 +44,17 @@ export const alumnoService = {
   async getHistorialAcademico() {
     const response = await api.get('/historial/alumnos/me/historial');
     return response.data;
+  },
+  async descargarResumenPDF(asignaturaId) {
+    const response = await api.get(`/alumno/asignaturas/${asignaturaId}/resumen-pdf`, {
+      responseType: 'blob'
+    });
+    return response;
+  },
+  async descargarPromediosPorAsignaturaPDF(soloCicloActual = true) {
+    const response = await api.get(`/alumno/promedio-por-asignatura/pdf?solo_ciclo_actual=${soloCicloActual}`, {
+      responseType: 'blob'
+    });
+    return response;
   }
 };
