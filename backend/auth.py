@@ -82,13 +82,24 @@ def get_current_active_user(current_user: Usuario = Depends(get_current_user)) -
         raise HTTPException(status_code=400, detail="Usuario inactivo")
     return current_user
 
-def require_role(required_role: str):
-    """Decorador para requerir un rol específico"""
+def require_role(required_role):
+    """Decorador para requerir uno o varios roles.
+    Acepta un `str` ("admin") o una lista/tupla (["admin", "docente"]).
+    """
     def role_checker(current_user: Usuario = Depends(get_current_active_user)) -> Usuario:
-        if current_user.rol != required_role:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="No tienes permisos suficientes"
-            )
+        # Normalizar a conjunto de roles permitidos
+        if isinstance(required_role, (list, tuple, set)):
+            allowed = set(required_role)
+            if current_user.rol not in allowed:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="No tienes permisos suficientes"
+                )
+        else:
+            if current_user.rol != required_role:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="No tienes permisos suficientes"
+                )
         return current_user
     return role_checker

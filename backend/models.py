@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Boolean, Date
+from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Boolean, Date, LargeBinary
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from database import Base
@@ -153,3 +153,26 @@ class ReporteDocente(Base):
 
     # Relaciones
     docente = relationship("Docente")
+
+# Nuevo: almacenamiento de archivo del reporte en la base de datos
+class ReporteArchivoDocente(Base):
+    __tablename__ = "reportes_docentes_archivos"
+
+    id = Column(Integer, primary_key=True, index=True)
+    reporte_id = Column(Integer, ForeignKey("reportes_docentes.id"), nullable=False)
+    filename = Column(String(300), nullable=False)
+    mime_type = Column(String(100), nullable=True)
+    content = Column(LargeBinary, nullable=False)
+    fecha_creacion = Column(DateTime(timezone=True), server_default=func.now())
+
+    # Relaciones
+    reporte = relationship("ReporteDocente")
+
+
+class ConfiguracionSistema(Base):
+    __tablename__ = "configuracion_sistema"
+
+    id = Column(Integer, primary_key=True, index=True)
+    nombre_sistema = Column(String(200), nullable=False, default="Sistema de Gestión de Notas")
+    logo_url = Column(String(500), nullable=True)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

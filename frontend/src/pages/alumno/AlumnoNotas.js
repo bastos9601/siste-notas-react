@@ -74,6 +74,18 @@ const AlumnoNotas = () => {
     return Array.from(asignaturasMap.values());
   };
 
+  const handleDescargarPDF = async (asignaturaId, asignaturaNombre) => {
+    try {
+      const response = await alumnoService.descargarResumenPDF(asignaturaId);
+      const blob = new Blob([response.data], { type: 'application/pdf' });
+      const url = window.URL.createObjectURL(blob);
+      const viewer = window.open(url, '_blank');
+      if (viewer) viewer.focus();
+    } catch (error) {
+      console.error('Error al visualizar el PDF:', error);
+      alert('No se pudo visualizar el PDF. Inténtalo más tarde.');
+    }
+  };
   const getEstadoNota = (calificacion) => {
     if (calificacion >= 13) return { texto: 'Aprobado', color: 'green' };
     if (calificacion >= 10) return { texto: 'Recuperación', color: 'yellow' };
@@ -345,7 +357,7 @@ const AlumnoNotas = () => {
                             <p className="text-sm text-gray-500">{asignatura.docente}</p>
                           </div>
                         </div>
-                        <div className="text-right">
+                        <div className="flex items-center space-x-4">
                           <div className="text-sm text-gray-500">{asignatura.notas.length} nota(s)</div>
                           <div className={`text-lg font-bold ${
                             promedios.promedioFinal >= 13 ? 'text-green-600' :
@@ -354,6 +366,13 @@ const AlumnoNotas = () => {
                           }`}>
                             {promedios.promedioFinal > 0 ? promedios.promedioFinal.toFixed(2) : '-'}
                           </div>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleDescargarPDF(asignatura.id, asignatura.nombre); }}
+                            className="btn-secondary px-3 py-1 text-xs"
+                            title="Ver resumen en PDF"
+                          >
+                            Ver PDF
+                          </button>
                         </div>
                       </div>
                     </div>

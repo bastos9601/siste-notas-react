@@ -142,7 +142,7 @@ const Dashboard = () => {
                 </div>
               </div>
 
-              <div className="card">
+              {/* <div className="card">
                 <div className="flex items-center">
                   <div className="flex-shrink-0">
                     <FileText className="h-8 w-8 text-orange-600" />
@@ -152,7 +152,7 @@ const Dashboard = () => {
                     <p className="text-2xl font-semibold text-gray-900">{stats.total_notas}</p>
                   </div>
                 </div>
-              </div>
+              </div> */}
             </>
           )}
 

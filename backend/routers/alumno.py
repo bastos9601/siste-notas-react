@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List
 from database import get_db
-from models import Usuario, Alumno, Asignatura, Nota, matriculas
+from models import Usuario, Alumno, Asignatura, Nota, Promedio, matriculas
 from schemas import (
     Asignatura as AsignaturaSchema,
     Nota as NotaSchema,
@@ -59,6 +59,17 @@ def get_next_cycle(ciclo: str) -> str:
     # Si no pudimos inferir nada, lanzar error para que el llamador lo maneje
     raise ValueError("No se pudo determinar el siguiente ciclo a partir del valor de 'ciclo'.")
 
+# Helper para extraer el ciclo base sin sección
+def get_base_ciclo(ciclo: str) -> str:
+    text = str(ciclo).strip()
+    m2 = re.search(r"\b(I|II|III|IV|V|VI|VII|VIII|IX|X)\b", text, flags=re.IGNORECASE)
+    if m2:
+        return m2.group(1).upper()
+    m = re.search(r"(\d+)(?!.*\d)", text)
+    if m:
+        return m.group(1)
+    return text
+
 
 def alumno_aprobo_asignatura(db: Session, alumno_id: int, asignatura_id: int) -> bool:
     """Determina si el alumno aprobó una asignatura: existe al menos una nota publicada >= PASSING_GRADE."""
@@ -93,7 +104,10 @@ def matricular_alumno_en_siguiente_ciclo(db: Session, alumno: Alumno) -> dict:
 
     asignaturas_actuales_ids = [m.asignatura_id for m in matriculas_data]
     # Filtrar sólo aquellas asignaturas que pertenecen al ciclo del alumno
-    asignaturas_actuales = db.query(Asignatura).filter(Asignatura.id.in_(asignaturas_actuales_ids), Asignatura.ciclo == alumno.ciclo).all()
+    asignaturas_actuales = db.query(Asignatura).filter(
+        Asignatura.id.in_(asignaturas_actuales_ids),
+        Asignatura.ciclo == get_base_ciclo(alumno.ciclo)
+    ).all()
 
     # Si no tiene asignaturas en el ciclo actual, no se puede avanzar
     if not asignaturas_actuales:
@@ -108,7 +122,7 @@ def matricular_alumno_en_siguiente_ciclo(db: Session, alumno: Alumno) -> dict:
 
     # Si llegó aquí, aprobó todas las asignaturas del ciclo actual
     # Buscar asignaturas del siguiente ciclo
-    asignaturas_siguiente = db.query(Asignatura).filter(Asignatura.ciclo == next_ciclo).all()
+    asignaturas_siguiente = db.query(Asignatura).filter(Asignatura.ciclo == get_base_ciclo(next_ciclo)).all()
     # Actualizamos el campo ciclo del alumno para registrar que pasó al siguiente ciclo.
     alumno.ciclo = next_ciclo
     db.commit()
@@ -182,7 +196,7 @@ async def mis_asignaturas(
         asignatura = db.query(Asignatura).filter(Asignatura.id == matricula.asignatura_id).first()
         if asignatura:
             # Filtrar solo por asignaturas del ciclo actual si se solicita
-            if not solo_ciclo_actual or asignatura.ciclo == alumno.ciclo:
+            if not solo_ciclo_actual or asignatura.ciclo == get_base_ciclo(alumno.ciclo):
                 asignaturas.append(asignatura)
     
     return asignaturas
@@ -207,7 +221,7 @@ async def mis_notas(
     if solo_ciclo_actual:
         # Filtrar por asignaturas del ciclo actual
         query = query.join(Asignatura, Nota.asignatura_id == Asignatura.id).filter(
-            Asignatura.ciclo == alumno.ciclo
+            Asignatura.ciclo == get_base_ciclo(alumno.ciclo)
         )
     
     notas = query.all()
@@ -290,38 +304,37 @@ async def promedio_por_asignatura(
     solo_ciclo_actual: bool = True
 ):
     """Calcular promedio por asignatura del alumno"""
-    # Buscar el alumno asociado al usuario
     alumno = db.query(Alumno).filter(Alumno.usuario_id == current_user.id).first()
     if not alumno:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Alumno no encontrado"
         )
-    
-    # Obtener asignaturas matriculadas
+
     matriculas_data = db.execute(
         matriculas.select().where(matriculas.c.alumno_id == alumno.id)
     ).fetchall()
-    
+
     resultados = []
-    
+    base_ciclo = get_base_ciclo(alumno.ciclo)
+
     for matricula in matriculas_data:
         asignatura = db.query(Asignatura).filter(Asignatura.id == matricula.asignatura_id).first()
         if asignatura:
             # Filtrar por ciclo actual si se solicita
-            if solo_ciclo_actual and asignatura.ciclo != alumno.ciclo:
+            if solo_ciclo_actual and asignatura.ciclo != base_ciclo:
                 continue
-                
+
             notas = db.query(Nota).filter(
                 Nota.alumno_id == alumno.id,
                 Nota.asignatura_id == asignatura.id,
                 Nota.publicada == True
             ).all()
-            
+
             if notas:
                 suma_notas = sum(nota.calificacion for nota in notas)
                 promedio = suma_notas / len(notas)
-                
+
                 resultados.append({
                     "asignatura_id": asignatura.id,
                     "asignatura_nombre": asignatura.nombre,
@@ -339,8 +352,139 @@ async def promedio_por_asignatura(
                     "nota_maxima": 0,
                     "nota_minima": 0
                 })
-    
+
     return resultados
+
+@router.get("/promedio-por-asignatura/pdf")
+async def promedio_por_asignatura_pdf(
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_role("alumno")),
+    solo_ciclo_actual: bool = True
+):
+    """Generar y descargar PDF con promedios por asignatura del alumno actual.
+
+    Usa las notas publicadas para calcular promedios si no hay registros en `Promedio`.
+    Incluye columnas: Asignatura, Total Notas, Promedio, Nota Máxima y Nota Mínima.
+    """
+    import io
+    from datetime import datetime
+    from fastapi.responses import StreamingResponse
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+    from reportlab.lib.pagesizes import letter
+    from reportlab.lib import colors
+    from reportlab.lib.styles import getSampleStyleSheet
+
+    # Buscar el alumno asociado al usuario
+    alumno = db.query(Alumno).filter(Alumno.usuario_id == current_user.id).first()
+    if not alumno:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Alumno no encontrado")
+
+    # Obtener asignaturas matriculadas
+    matriculas_data = db.execute(
+        matriculas.select().where(matriculas.c.alumno_id == alumno.id)
+    ).fetchall()
+
+    resultados = []
+
+    base_ciclo = get_base_ciclo(alumno.ciclo)
+
+    for matricula in matriculas_data:
+        asignatura = db.query(Asignatura).filter(Asignatura.id == matricula.asignatura_id).first()
+        if not asignatura:
+            continue
+        if solo_ciclo_actual and asignatura.ciclo != base_ciclo:
+            continue
+
+        # Intentar usar Promedio guardado
+        promedio_guardado = db.query(Promedio).filter(
+            Promedio.alumno_id == alumno.id,
+            Promedio.asignatura_id == asignatura.id
+        ).first()
+
+        # Obtener notas publicadas
+        notas = db.query(Nota).filter(
+            Nota.alumno_id == alumno.id,
+            Nota.asignatura_id == asignatura.id,
+            Nota.publicada == True
+        ).all()
+
+        if notas:
+            suma_notas = sum(n.calificacion for n in notas if n.calificacion is not None)
+            total_notas = len([n for n in notas if n.calificacion is not None])
+            promedio_calc = (suma_notas / total_notas) if total_notas > 0 else 0.0
+            nota_max = max(n.calificacion for n in notas if n.calificacion is not None)
+            nota_min = min(n.calificacion for n in notas if n.calificacion is not None)
+        else:
+            promedio_calc = 0.0
+            total_notas = 0
+            nota_max = 0
+            nota_min = 0
+
+        # Si hay promedio guardado con promedio_final, preferirlo
+        if promedio_guardado and promedio_guardado.promedio_final is not None:
+            promedio_final = float(promedio_guardado.promedio_final)
+        else:
+            promedio_final = float(round(promedio_calc, 2))
+
+        resultados.append({
+            "asignatura": asignatura.nombre,
+            "total_notas": total_notas,
+            "promedio": round(promedio_final, 2),
+            "nota_maxima": nota_max,
+            "nota_minima": nota_min,
+            "ciclo": asignatura.ciclo
+        })
+
+    # Generar PDF
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter)
+    styles = getSampleStyleSheet()
+
+    story = []
+    story.append(Paragraph("Promedios por Asignatura", styles["Title"]))
+    story.append(Spacer(1, 12))
+    story.append(Paragraph(f"Alumno: {alumno.nombre_completo}", styles["Normal"]))
+    story.append(Paragraph(f"Ciclo actual: {base_ciclo}", styles["Normal"]))
+    story.append(Paragraph(f"Fecha: {datetime.now().strftime('%d/%m/%Y %H:%M')}", styles["Normal"]))
+    story.append(Spacer(1, 12))
+
+    data = [["Asignatura", "Total Notas", "Promedio", "Nota Máxima", "Nota Mínima", "Ciclo"]]
+    for r in resultados:
+        data.append([
+            r["asignatura"],
+            str(r["total_notas"]),
+            f"{float(r["promedio"]):.2f}",
+            str(r["nota_maxima"]),
+            str(r["nota_minima"]),
+            str(r["ciclo"])])
+
+    table = Table(data, hAlign="LEFT")
+    table.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,0), colors.lightgrey),
+        ('TEXTCOLOR', (0,0), (-1,0), colors.black),
+        ('ALIGN', (1,1), (-1,-1), 'CENTER'),
+        ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+        ('BOTTOMPADDING', (0,0), (-1,0), 8),
+        ('GRID', (0,0), (-1,-1), 0.5, colors.grey)
+    ]))
+
+    story.append(table)
+    doc.build(story)
+
+    pdf_value = buffer.getvalue()
+    buffer.close()
+
+    # Nombre de archivo seguro
+    def slugify(value: str) -> str:
+        import re
+        value = re.sub(r"[^a-zA-Z0-9_\-]", "_", value)
+        return value.strip('_')
+
+    filename = f"promedios_por_asignatura_{slugify(alumno.nombre_completo.lower())}.pdf"
+    headers = {
+        "Content-Disposition": f"attachment; filename={filename}"
+    }
+    return StreamingResponse(io.BytesIO(pdf_value), media_type="application/pdf", headers=headers)
 
 @router.get("/perfil", response_model=AlumnoSchema)
 async def mi_perfil(
@@ -390,3 +534,133 @@ async def cambiar_contrasena(
             "email": current_user.email
         }
     }
+
+@router.get("/asignaturas/{asignatura_id}/resumen-pdf")
+async def resumen_pdf_asignatura(
+    asignatura_id: int,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_role("alumno"))
+):
+    """Generar y descargar PDF con resumen de promedios por asignatura.
+
+    Incluye: actividades, prácticas, parciales, examen final, promedio final,
+    además del nombre del docente, la asignatura y el ciclo.
+    """
+    import io
+    from datetime import datetime
+    from fastapi.responses import StreamingResponse
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+    from reportlab.lib.pagesizes import letter
+    from reportlab.lib import colors
+    from reportlab.lib.styles import getSampleStyleSheet
+
+    # Buscar alumno
+    alumno = db.query(Alumno).filter(Alumno.usuario_id == current_user.id).first()
+    if not alumno:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Alumno no encontrado")
+
+    # Verificar matrícula en la asignatura
+    matricula = db.execute(
+        matriculas.select().where(
+            matriculas.c.alumno_id == alumno.id,
+            matriculas.c.asignatura_id == asignatura_id
+        )
+    ).first()
+    if not matricula:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No estás matriculado en esta asignatura")
+
+    asignatura = db.query(Asignatura).filter(Asignatura.id == asignatura_id).first()
+    if not asignatura:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Asignatura no encontrada")
+
+    # Obtener promedios guardados
+    promedio = db.query(Promedio).filter(
+        Promedio.alumno_id == alumno.id,
+        Promedio.asignatura_id == asignatura_id
+    ).first()
+
+    # Obtener notas publicadas
+    notas = db.query(Nota).filter(
+        Nota.alumno_id == alumno.id,
+        Nota.asignatura_id == asignatura_id,
+        Nota.publicada == True
+    ).all()
+
+    def _prom_from_notas(tipo_list):
+        values = [n.calificacion for n in notas if n.tipo_nota in tipo_list]
+        if not values:
+            return None
+        return round(sum(values) / len(values), 2)
+
+    # Mapear tipos de evaluación
+    tipo_map = {
+        "actividades": ["participacion", "tarea", "actividad"],
+        "practicas": ["practica", "laboratorio", "trabajo"],
+        "parciales": ["examen_parcial", "parcial"],
+        "examen_final": ["examen_final"],
+    }
+
+    def pick_prom(attr, tipos):
+        if promedio and getattr(promedio, attr) is not None:
+            return round(getattr(promedio, attr), 2)
+        return _prom_from_notas(tipos)
+
+    actividades = pick_prom("actividades", tipo_map["actividades"])
+    practicas = pick_prom("practicas", tipo_map["practicas"])
+    parciales = pick_prom("parciales", tipo_map["parciales"])
+    examen_final = pick_prom("examen_final", tipo_map["examen_final"])
+
+    def safe(v):
+        return float(v) if v is not None else 0.0
+
+    if promedio and promedio.promedio_final is not None:
+        promedio_final = round(promedio.promedio_final, 2)
+    else:
+        promedio_final = round(
+            (safe(actividades) + safe(practicas) + safe(parciales) + safe(examen_final)) / 4.0, 2
+        )
+
+    # Generar PDF
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter)
+    styles = getSampleStyleSheet()
+
+    story = []
+    story.append(Paragraph("Resumen de Promedios", styles["Title"]))
+    story.append(Spacer(1, 12))
+    story.append(Paragraph(f"Alumno: {alumno.nombre_completo}", styles["Normal"]))
+    story.append(Paragraph(f"Asignatura: {asignatura.nombre}", styles["Normal"]))
+    docente_nombre = asignatura.docente.nombre_completo if asignatura.docente else "—"
+    story.append(Paragraph(f"Docente: {docente_nombre}", styles["Normal"]))
+    story.append(Paragraph(f"Ciclo: {asignatura.ciclo}", styles["Normal"]))
+    story.append(Paragraph(f"Fecha: {datetime.now().strftime('%d/%m/%Y %H:%M')}", styles["Normal"]))
+    story.append(Spacer(1, 12))
+
+    data = [
+        ["Tipo de Evaluación", "Promedio"],
+        ["Actividades", f"{safe(actividades):.2f}"],
+        ["Prácticas", f"{safe(practicas):.2f}"],
+        ["Parciales", f"{safe(parciales):.2f}"],
+        ["Examen Final", f"{safe(examen_final):.2f}"],
+        ["Promedio Final", f"{safe(promedio_final):.2f}"],
+    ]
+    table = Table(data, hAlign="LEFT")
+    table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.black),
+        ("ALIGN", (0, 0), (-1, -1), "LEFT"),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, -1), 10),
+        ("BOTTOMPADDING", (0, 0), (-1, 0), 8),
+        ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
+    ]))
+    story.append(table)
+
+    doc.build(story)
+    buffer.seek(0)
+
+    filename_safe = re.sub(r"\s+", "_", asignatura.nombre.lower())
+    headers = {
+        "Content-Disposition": f'attachment; filename="resumen_notas_{filename_safe}.pdf"'
+    }
+    return StreamingResponse(buffer, media_type="application/pdf", headers=headers)
