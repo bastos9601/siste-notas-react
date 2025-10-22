@@ -1,5 +1,6 @@
 from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from routers import auth, admin, docente, alumno, historial
 # Añadir import del nuevo router de chatbot
 from routers import chatbot
@@ -34,6 +35,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Servir archivos estáticos para logos subidos localmente
+uploads_root = os.path.join(backend_dir, "uploads")
+os.makedirs(os.path.join(uploads_root, "logos"), exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=uploads_root), name="uploads")
+
 # Incluir routers
 app.include_router(auth.router, prefix="/auth", tags=["autenticación"])
 app.include_router(admin.router, prefix="/admin", tags=["administrador"])
@@ -42,6 +48,9 @@ app.include_router(alumno.router, prefix="/alumno", tags=["alumno"])
 app.include_router(historial.router, prefix="/historial", tags=["historial académico"])
 # Incluir el router de chatbot
 app.include_router(chatbot.router, prefix="", tags=["chatbot"])
+# Incluir router de configuración
+from routers import configuracion
+app.include_router(configuracion.router, prefix="", tags=["configuración"])
 
 @app.get("/")
 async def root():
