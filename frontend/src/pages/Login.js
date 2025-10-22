@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { Mail, Lock, X } from 'lucide-react';
+import { adminService } from '../services/adminService';
 
 const Login = () => {
   const [formData, setFormData] = useState({
@@ -15,9 +16,14 @@ const Login = () => {
   const [recoveryEmail, setRecoveryEmail] = useState('');
   const [recoveryLoading, setRecoveryLoading] = useState(false);
   const [recoveryMessage, setRecoveryMessage] = useState('');
+  const [config, setConfig] = useState(null);
 
   const { login } = useAuth();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    adminService.getConfiguracionPublica().then(setConfig).catch(() => {});
+  }, []);
 
   const handleChange = (e) => {
     setFormData({
@@ -76,11 +82,18 @@ const Login = () => {
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-blue-50 to-gray-100 py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-md w-full space-y-8 bg-white p-8 rounded-xl shadow-md">
-        <div>
-          <h2 className="mt-2 text-center text-3xl font-bold text-gray-800">
-            Sistema de Notas
+        <div className="text-center">
+          {config?.logo_url && (
+            <img
+              src={config.logo_url}
+              alt="Logo"
+              className="mx-auto h-16 w-16 object-contain"
+            />
+          )}
+          <h2 className="mt-2 text-3xl font-bold text-gray-800">
+            {config?.nombre_sistema || 'Sistema de Notas'}
           </h2>
-          <p className="mt-3 text-center text-sm text-gray-600 border-b pb-4">
+          <p className="mt-3 text-sm text-gray-600 border-b pb-4">
             Inicia sesión en tu cuenta
           </p>
         </div>

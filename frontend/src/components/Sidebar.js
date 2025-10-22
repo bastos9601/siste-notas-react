@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react'
 import { NavLink } from 'react-router-dom';
 import { 
   LayoutDashboard, 
@@ -10,12 +10,19 @@ import {
   TrendingUp,
   User,
   X,
-  BarChart
+  BarChart,
+  Settings
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { adminService } from '../services/adminService';
 
 const Sidebar = ({ isOpen, onClose }) => {
   const { user } = useAuth();
+  const [config, setConfig] = useState(null);
+
+  useEffect(() => {
+    adminService.getConfiguracionPublica().then(setConfig).catch(() => {});
+  }, []);
 
   const getNavigationItems = () => {
     const baseItems = [
@@ -32,6 +39,7 @@ const Sidebar = ({ isOpen, onClose }) => {
         // { name: 'Ver Notas', href: '/admin/notas', icon: FileText, roles: ['admin'] },
         { name: 'Historial Académico', href: '/admin/historial', icon: GraduationCap, roles: ['admin'] },
         { name: 'Reportes', href: '/admin/reportes', icon: BarChart, roles: ['admin'] },
+        { name: 'Configuración', href: '/admin/configuracion', icon: Settings, roles: ['admin'] },
         { name: 'Mi Perfil', href: '/admin/perfil', icon: User, roles: ['admin'] }
       ];
     }
@@ -69,7 +77,10 @@ const Sidebar = ({ isOpen, onClose }) => {
       <div className="hidden lg:fixed lg:inset-y-0 lg:flex lg:w-64 lg:flex-col">
         <div className="flex flex-col flex-grow bg-white border-r border-gray-200 pt-5 pb-4 overflow-y-auto">
           <div className="flex items-center flex-shrink-0 px-4">
-            <h2 className="text-lg font-semibold text-gray-900">Menú</h2>
+            {config?.logo_url ? (
+              <img src={config.logo_url} alt="Logo" className="h-10 w-10 object-contain mr-3" />
+            ) : null}
+            <h2 className="text-lg font-semibold text-gray-900">{config?.nombre_sistema || 'Menú'}</h2>
           </div>
           <div className="mt-5 flex-grow flex flex-col">
             <nav className="flex-1 px-2 space-y-1">
@@ -99,7 +110,12 @@ const Sidebar = ({ isOpen, onClose }) => {
       }`}>
         <div className="flex flex-col h-full">
           <div className="flex items-center justify-between px-4 py-5 border-b border-gray-200">
-            <h2 className="text-lg font-semibold text-gray-900">Menú</h2>
+            <div className="flex items-center">
+              {config?.logo_url ? (
+                <img src={config.logo_url} alt="Logo" className="h-8 w-8 object-contain mr-2" />
+              ) : null}
+              <h2 className="text-lg font-semibold text-gray-900">{config?.nombre_sistema || 'Menú'}</h2>
+            </div>
             <button
               onClick={onClose}
               className="p-2 rounded-md text-gray-400 hover:text-gray-500 hover:bg-gray-100"

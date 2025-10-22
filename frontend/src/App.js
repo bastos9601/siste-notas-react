@@ -25,6 +25,7 @@ import AlumnoNotas from './pages/alumno/AlumnoNotas';
 import AlumnoPromedios from './pages/alumno/AlumnoPromedios';
 import AlumnoPerfil from './pages/alumno/AlumnoPerfil';
 import AlumnoHistorial from './pages/alumno/AlumnoHistorial';
+import AdminConfiguracion from './pages/admin/AdminConfiguracion';
 
 function App() {
   return (
@@ -70,6 +71,11 @@ function App() {
               <Route path="admin/reportes" element={
                 <ProtectedRoute allowedRoles={['admin']}>
                   <AdminReportes />
+                </ProtectedRoute>
+              } />
+              <Route path="admin/configuracion" element={
+                <ProtectedRoute allowedRoles={['admin']}>
+                  <AdminConfiguracion />
                 </ProtectedRoute>
               } />
               <Route path="admin/perfil" element={
