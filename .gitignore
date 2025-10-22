@@ -79,3 +79,8 @@ dist/
 # Archivos de sistema
 .DS_Store
 Thumbs.db
+
+node_modules/
+.cache/
+dist/
+build/

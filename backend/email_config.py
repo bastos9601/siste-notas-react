@@ -1,15 +1,23 @@
 from fastapi_mail import FastMail, MessageSchema, ConnectionConfig
 from pydantic import EmailStr
+from fastapi import UploadFile
+from io import BytesIO
 import os
 from dotenv import load_dotenv
+import smtplib
+from email.message import EmailMessage
 
 load_dotenv()
 
 # Configuración de email
+MAIL_USERNAME = os.getenv("MAIL_USERNAME", "lopscarlos18@gmail.com")
+MAIL_PASSWORD = os.getenv("MAIL_PASSWORD", "hfwp iowb vtbf dddq")
+MAIL_FROM = os.getenv("MAIL_FROM") or MAIL_USERNAME
+
 conf = ConnectionConfig(
-    MAIL_USERNAME=os.getenv("MAIL_USERNAME", "tu-email@gmail.com"),
-    MAIL_PASSWORD=os.getenv("MAIL_PASSWORD", "tu-password-de-app"),
-    MAIL_FROM=os.getenv("MAIL_FROM", "tu-email@gmail.com"),
+    MAIL_USERNAME=MAIL_USERNAME,
+    MAIL_PASSWORD=MAIL_PASSWORD,
+    MAIL_FROM=MAIL_FROM,
     MAIL_PORT=587,
     MAIL_SERVER="smtp.gmail.com",
     MAIL_STARTTLS=True,
@@ -910,3 +918,137 @@ async def send_report_with_attachment(email: str, nombre_docente: str, asignatur
         return {"success": True, "message": f"Reporte enviado exitosamente a {email}"}
     except Exception as e:
         return {"success": False, "message": f"Error al enviar reporte: {str(e)}"}
+
+
+async def send_report_with_attachment_bytes(email: str, nombre_docente: str, asignatura: str, tipo_evaluacion: str, filename: str, file_bytes: bytes, mime_type: str = "application/pdf"):
+    # Plantilla HTML igual que la usada en el envío con ruta
+    html_content = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset=\"utf-8\">
+        <title>Reporte de Notas</title>
+        <style>
+            body {{
+                font-family: Arial, sans-serif;
+                line-height: 1.6;
+                color: #333;
+                max-width: 700px;
+                margin: 0 auto;
+                padding: 20px;
+            }}
+            .header {{
+                background-color: #3b82f6;
+                color: white;
+                padding: 20px;
+                text-align: center;
+                border-radius: 8px 8px 0 0;
+            }}
+            .content {{
+                background-color: #f8fafc;
+                padding: 24px;
+                border-radius: 0 0 8px 8px;
+            }}
+            .info-box {{
+                background-color: #eff6ff;
+                border: 1px solid #3b82f6;
+                color: #1e40af;
+                padding: 12px;
+                border-radius: 8px;
+                margin: 16px 0;
+            }}
+            .footer {{
+                text-align: center;
+                margin-top: 24px;
+                color: #6b7280;
+                font-size: 13px;
+            }}
+        </style>
+    </head>
+    <body>
+        <div class=\"header\">
+            <h1>📄 Reporte de Notas</h1>
+        </div>
+        <div class=\"content\">
+            <p>Hola,</p>
+            <p>El docente <strong>{nombre_docente}</strong> ha compartido el reporte de la asignatura <strong>{asignatura}</strong> correspondiente a <strong>{tipo_evaluacion}</strong>.</p>
+            <div class=\"info-box\">El archivo PDF del reporte se adjunta a este correo.</div>
+            <p>Saludos,<br>Sistema de Gestión de Notas</p>
+        </div>
+        <div class=\"footer\">
+            <p>Este es un email automático del Sistema de Gestión de Notas</p>
+        </div>
+    </body>
+    </html>
+    """
+
+    # Construir UploadFile con bytes en memoria
+    try:
+        upload = UploadFile(filename=filename, file=BytesIO(file_bytes))
+        message = MessageSchema(
+            subject=f"Reporte de Notas - {asignatura} ({tipo_evaluacion})",
+            recipients=[email],  # FORZAR envío solo al destinatario ingresado
+            body=html_content,
+            subtype="html",
+            attachments=[upload],
+        )
+    except Exception as e:
+        # Si falla la creación de UploadFile (compatibilidad), usar adjunto por ruta
+        backend_dir = os.path.dirname(os.path.abspath(__file__))
+        tmp_dir = os.path.join(backend_dir, "reports", "tmp")
+        os.makedirs(tmp_dir, exist_ok=True)
+        tmp_path = os.path.join(tmp_dir, filename)
+        with open(tmp_path, "wb") as f:
+            f.write(file_bytes)
+        message = MessageSchema(
+            subject=f"Reporte de Notas - {asignatura} ({tipo_evaluacion})",
+            recipients=[email],  # FORZAR envío solo al destinatario ingresado
+            body=html_content,
+            subtype="html",
+            attachments=[tmp_path],
+        )
+
+    try:
+        await FastMail(conf).send_message(message)
+        return {"success": True, "message": f"Reporte enviado exitosamente a {email}"}
+    except Exception as e1:
+        # Fallback: guardar temporalmente y adjuntar por ruta
+        try:
+            backend_dir = os.path.dirname(os.path.abspath(__file__))
+            tmp_dir = os.path.join(backend_dir, "reports", "tmp")
+            os.makedirs(tmp_dir, exist_ok=True)
+            tmp_path = os.path.join(tmp_dir, filename)
+            with open(tmp_path, "wb") as f:
+                f.write(file_bytes)
+            message = MessageSchema(
+                subject=f"Reporte de Notas - {asignatura} ({tipo_evaluacion})",
+                recipients=[email],  # FORZAR envío solo al destinatario ingresado
+                body=html_content,
+                subtype="html",
+                attachments=[tmp_path],
+            )
+            await FastMail(conf).send_message(message)
+            try:
+                os.remove(tmp_path)
+            except Exception:
+                pass
+            return {"success": True, "message": f"Reporte enviado exitosamente a {email}"}
+        except Exception as e2:
+            # Fallback 1: guardar temporalmente y adjuntar por ruta
+            try:
+                msg = EmailMessage()
+                msg["Subject"] = f"Reporte de Notas - {asignatura} ({tipo_evaluacion})"
+                msg["From"] = MAIL_FROM
+                msg["To"] = email
+                msg.set_content("Adjuntamos el reporte de notas en PDF.")
+                msg.add_alternative(html_content, subtype="html")
+                msg.add_attachment(file_bytes, maintype="application", subtype="pdf", filename=filename)
+
+                with smtplib.SMTP("smtp.gmail.com", 587) as smtp:
+                    smtp.starttls()
+                    smtp.login(MAIL_USERNAME, MAIL_PASSWORD)
+                    smtp.send_message(msg)
+
+                return {"success": True, "message": f"Reporte enviado exitosamente a {email} (SMTP)"}
+            except Exception as e3:
+                return {"success": False, "message": f"Error al enviar reporte: {str(e1)} | Fallback ruta: {str(e2)} | SMTP: {str(e3)}"}

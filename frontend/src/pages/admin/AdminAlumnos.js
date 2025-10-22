@@ -12,10 +12,38 @@ const AdminAlumnos = () => {
   const [selectedAlumnoHistorial, setSelectedAlumnoHistorial] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCiclo, setSelectedCiclo] = useState(null);
+  // Estado para importación CSV
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [csvFile, setCsvFile] = useState(null);
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState(null);
+  // Helpers para ciclo base y sección
+  const getBaseCiclo = (text = '') => {
+    const str = String(text).trim();
+    const mRoman = str.match(/\b(I|II|III|IV|V|VI|VII|VIII|IX|X)\b/i);
+    if (mRoman) return mRoman[1].toUpperCase();
+    const mDigit = str.match(/(\d+)(?!.*\d)/);
+    if (mDigit) return mDigit[1];
+    return str;
+  };
+  const extractCycleAndSeccion = (text = '') => {
+    const base = getBaseCiclo(text);
+    let seccion = 'Sin sección';
+    const str = String(text).trim();
+    const mSec = str.match(/(?:Sección\s*)?([A-Z])\s*$/i);
+    if (mSec && mSec[1] && !base.endsWith(mSec[1].toUpperCase())) {
+      seccion = mSec[1].toUpperCase();
+    } else {
+      const mAlt = str.match(new RegExp(base + "[\\/\-\s]+([A-Z])$", 'i'));
+      if (mAlt && mAlt[1]) seccion = mAlt[1].toUpperCase();
+    }
+    return { base, seccion };
+  };
   const [formData, setFormData] = useState({
     nombre_completo: '',
     dni: '',
     ciclo: '',
+    seccion: 'Sin sección',
     email: '',
     password: ''
   });
@@ -38,9 +66,15 @@ const AdminAlumnos = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
+      // Combinar ciclo + sección sólo para enviar al backend
+      const cicloCombinado = formData.seccion && formData.seccion !== 'Sin sección'
+        ? `${formData.ciclo} ${formData.seccion}`
+        : formData.ciclo;
+
       if (editingAlumno) {
         // Para actualización, enviar null si password está vacío
-        const updateData = { ...formData };
+        const updateData = { ...formData, ciclo: cicloCombinado };
+        delete updateData.seccion;
         if (updateData.password === '') {
           updateData.password = null;
         }
@@ -49,7 +83,9 @@ const AdminAlumnos = () => {
         setShowModal(false);
         resetForm();
       } else {
-        await adminService.createAlumno(formData);
+        const createData = { ...formData, ciclo: cicloCombinado };
+        delete createData.seccion;
+        await adminService.createAlumno(createData);
         loadAlumnos();
         setShowModal(false);
         resetForm();
@@ -65,6 +101,7 @@ const AdminAlumnos = () => {
       nombre_completo: '',
       dni: '',
       ciclo: '',
+      seccion: 'Sin sección',
       email: '',
       password: ''
     });
@@ -145,6 +182,23 @@ ${response.instructions}
     }
   };
 
+  // Importar CSV
+  const handleImportCSVSubmit = async () => {
+    if (!csvFile) return;
+    try {
+      setImporting(true);
+      const result = await adminService.importarAlumnosCSV(csvFile);
+      setImportResult(result);
+      await loadAlumnos();
+    } catch (error) {
+      console.error('Error al importar CSV:', error);
+      const errorMessage = error.response?.data?.detail || 'Error al importar el archivo CSV.';
+      alert(errorMessage);
+    } finally {
+      setImporting(false);
+    }
+  };
+
   // Obtener ciclos únicos con contadores
   const ciclosConContadores = alumnos.reduce((acc, alumno) => {
     const ciclo = alumno.ciclo;
@@ -180,13 +234,21 @@ ${response.instructions}
       {/* Header */}
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-bold text-gray-900">Gestión de Alumnos</h1>
-        <button
-          onClick={() => setShowModal(true)}
-          className="btn-primary flex items-center"
-        >
-          <Plus className="h-4 w-4 mr-2" />
-          Nuevo Alumno
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowImportModal(true)}
+            className="btn-secondary"
+          >
+            Importar CSV
+          </button>
+          <button
+            onClick={() => setShowModal(true)}
+            className="btn-primary flex items-center"
+          >
+            <Plus className="h-4 w-4 mr-2" />
+            Nuevo Alumno
+          </button>
+        </div>
       </div>
 
       {/* Tarjetas de Ciclos */}
@@ -330,13 +392,15 @@ ${response.instructions}
                           <button
                             onClick={() => {
                               setEditingAlumno(alumno);
-                              setFormData({
-                                nombre_completo: alumno.nombre_completo,
-                                dni: alumno.dni,
-                                ciclo: alumno.ciclo,
-                                email: alumno.usuario?.email,
-                                password: ''
-                              });
+                              const parsed = extractCycleAndSeccion(alumno.ciclo);
+                                setFormData({
+                                  nombre_completo: alumno.nombre_completo,
+                                  dni: alumno.dni,
+                                  ciclo: parsed.base,
+                                  seccion: parsed.seccion,
+                                  email: alumno.usuario?.email,
+                                  password: ''
+                                });
                               setShowModal(true);
                             }}
                             className="text-primary-600 hover:text-primary-900"
@@ -430,20 +494,32 @@ ${response.instructions}
                   <label className="block text-sm font-medium text-gray-700">
                     Ciclo
                   </label>
-                  <select
-                    required
-                    className="input-field"
-                    value={formData.ciclo}
-                    onChange={(e) => setFormData({...formData, ciclo: e.target.value})}
-                  >
-                    <option value="">Seleccionar ciclo</option>
-                    <option value="I">I</option>
-                    <option value="II">II</option>
-                    <option value="III">III</option>
-                    <option value="IV">IV</option>
-                    <option value="V">V</option>
-                    <option value="VI">VI</option>
-                  </select>
+                  <div className="flex gap-2">
+                    <select
+                      required
+                      className="input-field flex-1"
+                      value={formData.ciclo}
+                      onChange={(e) => setFormData({...formData, ciclo: e.target.value})}
+                    >
+                      <option value="">Seleccionar ciclo</option>
+                      <option value="I">I</option>
+                      <option value="II">II</option>
+                      <option value="III">III</option>
+                      <option value="IV">IV</option>
+                      <option value="V">V</option>
+                      <option value="VI">VI</option>
+                    </select>
+                    <select
+                      className="input-field w-36"
+                      value={formData.seccion}
+                      onChange={(e) => setFormData({...formData, seccion: e.target.value})}
+                    >
+                      <option value="Sin sección">Sin sección</option>
+                      <option value="A">A</option>
+                      <option value="B">B</option>
+                      <option value="C">C</option>
+                    </select>
+                  </div>
                 </div>
                 
                 <div>
@@ -489,6 +565,65 @@ ${response.instructions}
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal para importar CSV */}
+      {showImportModal && (
+        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+          <div className="relative top-20 mx-auto p-5 border w-[480px] shadow-lg rounded-md bg-white">
+            <div className="mt-3">
+              <h3 className="text-lg font-medium text-gray-900 mb-4">Importar Alumnos desde CSV</h3>
+              <div className="space-y-4">
+                <p className="text-sm text-gray-600">
+                  Formato esperado de columnas: <strong>nombre_completo,dni,ciclo,email</strong> [<em>password</em>] [<em>seccion</em>]
+                </p>
+                <input
+                  type="file"
+                  accept=".csv"
+                  className="input-field"
+                  onChange={(e) => setCsvFile(e.target.files?.[0] || null)}
+                />
+                {importResult && (
+                  <div className="bg-gray-50 border rounded p-3 text-sm">
+                    <div>Filas procesadas: {importResult.total_rows}</div>
+                    <div>Insertados: {importResult.inserted}</div>
+                    <div>Omitidos: {importResult.skipped}</div>
+                    {importResult.skipped_details?.length > 0 && (
+                      <details className="mt-2">
+                        <summary className="cursor-pointer">Ver detalles omitidos</summary>
+                        <ul className="list-disc pl-5">
+                          {importResult.skipped_details.slice(0, 10).map((item, idx) => (
+                            <li key={idx}>Fila {item.row}: {item.reason} (dni: {item.dni}, email: {item.email})</li>
+                          ))}
+                          {importResult.skipped_details.length > 10 && (
+                            <li>+ {importResult.skipped_details.length - 10} más...</li>
+                          )}
+                        </ul>
+                      </details>
+                    )}
+                  </div>
+                )}
+                <div className="flex justify-end space-x-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => { setShowImportModal(false); setCsvFile(null); setImportResult(null); }}
+                    className="btn-secondary"
+                  >
+                    Cerrar
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!csvFile || importing}
+                    onClick={handleImportCSVSubmit}
+                    className="btn-primary"
+                  >
+                    {importing ? 'Importando...' : 'Importar'}
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </div>

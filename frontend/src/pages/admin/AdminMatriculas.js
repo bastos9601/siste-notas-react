@@ -51,9 +51,18 @@ const AdminMatriculas = () => {
     }
   };
 
+  const getBaseCiclo = (text = '') => {
+    const str = String(text).trim();
+    const mRoman = str.match(/\b(I|II|III|IV|V|VI|VII|VIII|IX|X)\b/i);
+    if (mRoman) return mRoman[1].toUpperCase();
+    const mDigit = str.match(/(\d+)(?!.*\d)/);
+    if (mDigit) return mDigit[1];
+    return str;
+  };
   const loadAsignaturasPorCiclo = async (ciclo) => {
     try {
-      const asignaturasData = await adminService.getAsignaturas(ciclo);
+      const base = getBaseCiclo(ciclo);
+      const asignaturasData = await adminService.getAsignaturas(base);
       setAsignaturas(asignaturasData);
     } catch (error) {
       console.error('Error al cargar asignaturas por ciclo:', error);
