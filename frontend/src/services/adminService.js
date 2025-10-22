@@ -32,6 +32,16 @@ export const adminService = {
     return response.data;
   },
   
+  // Importación CSV de alumnos
+  async importarAlumnosCSV(file) {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await api.post('/admin/alumnos/import-csv', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    });
+    return response.data;
+  },
+  
   // Registrar siguiente ciclo (no matricular, solo actualizar campo ciclo)
   async registrarSiguienteCicloAlumno(id) {
     const response = await api.post(`/admin/alumnos/${id}/registrar-siguiente-ciclo`);
@@ -60,8 +70,6 @@ export const adminService = {
   },
 
   async updateDocente(id, docenteData) {
-    console.log('Enviando PUT request a:', `/admin/docentes/${id}`);
-    console.log('Datos:', docenteData);
     const response = await api.put(`/admin/docentes/${id}`, docenteData);
     return response.data;
   },
@@ -113,12 +121,12 @@ export const adminService = {
     const response = await api.post('/admin/matriculas', matriculaData);
     return response.data;
   },
-
+  
   async deleteMatricula(alumnoId, asignaturaId) {
     const response = await api.delete(`/admin/matriculas/${alumnoId}/${asignaturaId}`);
     return response.data;
   },
-
+  
   // Gestión de Notas
   async getNotas() {
     const response = await api.get('/admin/notas');
@@ -141,5 +149,33 @@ export const adminService = {
   async getHistorialAcademicoAlumno(alumnoId) {
     const response = await api.get(`/historial/alumnos/${alumnoId}/historial`);
     return response.data;
-  }
+  },
+  
+  async deleteHistorialAcademicoAlumno(alumnoId, ciclo = null) {
+    const url = ciclo 
+      ? `/historial/alumnos/${alumnoId}/historial?ciclo=${encodeURIComponent(ciclo)}`
+      : `/historial/alumnos/${alumnoId}/historial`;
+    const response = await api.delete(url);
+    return response.data;
+  },
+  
+  // Configuración del sistema
+  async getConfiguracionPublica() {
+    const response = await api.get('/configuracion');
+    return response.data;
+  },
+
+  async actualizarConfiguracion(configData) {
+    const response = await api.put('/admin/configuracion', configData);
+    return response.data;
+  },
+
+  async subirLogo(file) {
+    const formData = new FormData();
+    formData.append('archivo', file);
+    const response = await api.post('/admin/configuracion/logo/cloudinary', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    });
+    return response.data;
+  },
 };
