@@ -24,6 +24,7 @@ class Usuario(UsuarioBase):
     fecha_creacion: datetime
     
     class Config:
+        orm_mode = True
         from_attributes = True
 
 # Schemas para Alumno
@@ -55,6 +56,7 @@ class Alumno(AlumnoBase):
     usuario: Usuario
     
     class Config:
+        orm_mode = True
         from_attributes = True
 
 # Schemas para Docente
@@ -72,6 +74,7 @@ class Docente(DocenteBase):
     usuario: Usuario
     
     class Config:
+        orm_mode = True
         from_attributes = True
 
 # Schemas para Asignatura
@@ -88,6 +91,7 @@ class Asignatura(AsignaturaBase):
     docente: Docente
     
     class Config:
+        orm_mode = True
         from_attributes = True
 
 # Schemas para Nota
@@ -114,6 +118,7 @@ class Nota(NotaBase):
     asignatura: Asignatura
     
     class Config:
+        orm_mode = True
         from_attributes = True
 
 # Schemas para autenticación
@@ -140,6 +145,7 @@ class Matricula(BaseModel):
     asignatura: Asignatura
     
     class Config:
+        orm_mode = True
         from_attributes = True
 
 # Schemas para historial académico
@@ -156,6 +162,7 @@ class NotaHistorial(NotaHistorialBase):
     asignatura_id: int
     
     class Config:
+        orm_mode = True
         from_attributes = True
 
 class AsignaturaHistorialBase(BaseModel):
@@ -171,6 +178,7 @@ class AsignaturaHistorial(AsignaturaHistorialBase):
     notas: List[NotaHistorial] = []
     
     class Config:
+        orm_mode = True
         from_attributes = True
 
 class HistorialAcademicoBase(BaseModel):
@@ -186,6 +194,7 @@ class HistorialAcademico(HistorialAcademicoBase):
     asignaturas: List[AsignaturaHistorial] = []
     
     class Config:
+        orm_mode = True
         from_attributes = True
 
 # Schemas para respuestas con listas
@@ -210,4 +219,18 @@ class ReporteDocente(ReporteDocenteBase):
     fecha_envio: datetime
 
     class Config:
+        orm_mode = True
+        from_attributes = True
+
+# Schemas para Configuración del Sistema
+class ConfiguracionSistemaBase(BaseModel):
+    nombre_sistema: str
+    logo_url: Optional[str] = None
+
+class ConfiguracionSistema(ConfiguracionSistemaBase):
+    id: int
+    updated_at: datetime
+
+    class Config:
+        orm_mode = True
         from_attributes = True

@@ -40,7 +40,7 @@ const Header = ({ onMenuClick }) => {
           {/* Título del sistema */}
           <div className="flex-1 lg:flex-none">
             <h1 className="text-xl font-semibold text-gray-900">
-              Sistema de Notas
+              {/* Sistema de Notas */}
             </h1>
           </div>
           
