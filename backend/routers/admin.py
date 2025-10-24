@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
 from sqlalchemy.orm import Session, joinedload
 from typing import List
 from database import get_db
-from models import Usuario, Alumno, Docente, Asignatura, Nota, Promedio, matriculas, HistorialAcademico, AsignaturaHistorial, NotaHistorial, ReporteDocente, ReporteArchivoDocente
+from models import Usuario, Alumno, Docente, Asignatura, Nota, matriculas, HistorialAcademico, AsignaturaHistorial, NotaHistorial, ReporteDocente, ReporteArchivoDocente
 from schemas import (
     AlumnoCreate, AlumnoUpdate, Alumno as AlumnoSchema,
     DocenteCreate, Docente as DocenteSchema,
@@ -385,8 +385,7 @@ async def eliminar_alumno(
         # Eliminar todas las notas del alumno
         db.query(Nota).filter(Nota.alumno_id == alumno_id).delete()
 
-        # Eliminar todos los promedios del alumno
-        db.query(Promedio).filter(Promedio.alumno_id == alumno_id).delete()
+        # Los promedios se calculan dinámicamente; no existen registros persistidos que eliminar
         
         # Eliminar todas las matrículas del alumno
         db.execute(

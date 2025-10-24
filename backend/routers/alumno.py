@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List
 from database import get_db
-from models import Usuario, Alumno, Asignatura, Nota, Promedio, matriculas
+from models import Usuario, Alumno, Asignatura, Nota, matriculas
 from schemas import (
     Asignatura as AsignaturaSchema,
     Nota as NotaSchema,
@@ -15,6 +15,7 @@ import re
 from fastapi import BackgroundTasks
 from sqlalchemy.orm import Session
 from fastapi import Depends
+from promedio_calculator import calcular_promedios_alumno
 
 router = APIRouter()
 
@@ -261,7 +262,7 @@ async def notas_por_asignatura(
         Nota.asignatura_id == asignatura_id,
         Nota.publicada == True
     ).all()
-    
+
     return notas
 
 @router.get("/promedio")
@@ -395,36 +396,36 @@ async def promedio_por_asignatura_pdf(
         if solo_ciclo_actual and asignatura.ciclo != base_ciclo:
             continue
 
-        # Intentar usar Promedio guardado
-        promedio_guardado = db.query(Promedio).filter(
-            Promedio.alumno_id == alumno.id,
-            Promedio.asignatura_id == asignatura.id
-        ).first()
-
-        # Obtener notas publicadas
-        notas = db.query(Nota).filter(
-            Nota.alumno_id == alumno.id,
-            Nota.asignatura_id == asignatura.id,
-            Nota.publicada == True
-        ).all()
-
-        if notas:
-            suma_notas = sum(n.calificacion for n in notas if n.calificacion is not None)
-            total_notas = len([n for n in notas if n.calificacion is not None])
-            promedio_calc = (suma_notas / total_notas) if total_notas > 0 else 0.0
-            nota_max = max(n.calificacion for n in notas if n.calificacion is not None)
-            nota_min = min(n.calificacion for n in notas if n.calificacion is not None)
+        # Calcular promedios dinámicamente usando el helper
+        promedios_alumno = calcular_promedios_alumno(db, alumno.id, asignatura.id)
+        
+        if promedios_alumno:
+            # Asegurar que el promedio_final sea numérico; si viene None, usar 0.0
+            pf_val = promedios_alumno.get("promedio_final")
+            try:
+                promedio_final = float(pf_val) if pf_val is not None else 0.0
+            except (TypeError, ValueError):
+                promedio_final = 0.0
+            # Obtener notas para estadísticas adicionales
+            notas = db.query(Nota).filter(
+                Nota.alumno_id == alumno.id,
+                Nota.asignatura_id == asignatura.id,
+                Nota.publicada == True
+            ).all()
+            
+            if notas:
+                total_notas = len([n for n in notas if n.calificacion is not None])
+                nota_max = max(n.calificacion for n in notas if n.calificacion is not None) if total_notas > 0 else 0
+                nota_min = min(n.calificacion for n in notas if n.calificacion is not None) if total_notas > 0 else 0
+            else:
+                total_notas = 0
+                nota_max = 0
+                nota_min = 0
         else:
-            promedio_calc = 0.0
+            promedio_final = 0.0
             total_notas = 0
             nota_max = 0
             nota_min = 0
-
-        # Si hay promedio guardado con promedio_final, preferirlo
-        if promedio_guardado and promedio_guardado.promedio_final is not None:
-            promedio_final = float(promedio_guardado.promedio_final)
-        else:
-            promedio_final = float(round(promedio_calc, 2))
 
         resultados.append({
             "asignatura": asignatura.nombre,
@@ -453,10 +454,11 @@ async def promedio_por_asignatura_pdf(
         data.append([
             r["asignatura"],
             str(r["total_notas"]),
-            f"{float(r["promedio"]):.2f}",
+            f"{float(r['promedio']):.2f}",
             str(r["nota_maxima"]),
             str(r["nota_minima"]),
-            str(r["ciclo"])])
+            str(r["ciclo"])
+        ])
 
     table = Table(data, hAlign="LEFT")
     table.setStyle(TableStyle([
@@ -573,49 +575,27 @@ async def resumen_pdf_asignatura(
     if not asignatura:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Asignatura no encontrada")
 
-    # Obtener promedios guardados
-    promedio = db.query(Promedio).filter(
-        Promedio.alumno_id == alumno.id,
-        Promedio.asignatura_id == asignatura_id
-    ).first()
-
-    # Obtener notas publicadas
+    # Obtener notas publicadas (opcional)
     notas = db.query(Nota).filter(
         Nota.alumno_id == alumno.id,
         Nota.asignatura_id == asignatura_id,
         Nota.publicada == True
     ).all()
 
-    def _prom_from_notas(tipo_list):
-        values = [n.calificacion for n in notas if n.tipo_nota in tipo_list]
-        if not values:
-            return None
-        return round(sum(values) / len(values), 2)
+    # Calcular promedios dinámicamente desde las notas (más robusto)
+    promedios = calcular_promedios_alumno(db, alumno.id, asignatura_id)
 
-    # Mapear tipos de evaluación
-    tipo_map = {
-        "actividades": ["participacion", "tarea", "actividad"],
-        "practicas": ["practica", "laboratorio", "trabajo"],
-        "parciales": ["examen_parcial", "parcial"],
-        "examen_final": ["examen_final"],
-    }
-
-    def pick_prom(attr, tipos):
-        if promedio and getattr(promedio, attr) is not None:
-            return round(getattr(promedio, attr), 2)
-        return _prom_from_notas(tipos)
-
-    actividades = pick_prom("actividades", tipo_map["actividades"])
-    practicas = pick_prom("practicas", tipo_map["practicas"])
-    parciales = pick_prom("parciales", tipo_map["parciales"])
-    examen_final = pick_prom("examen_final", tipo_map["examen_final"])
+    actividades = promedios.get("actividades")
+    practicas = promedios.get("practicas")
+    parciales = promedios.get("parciales")
+    examen_final = promedios.get("examen_final")
 
     def safe(v):
         return float(v) if v is not None else 0.0
 
-    if promedio and promedio.promedio_final is not None:
-        promedio_final = round(promedio.promedio_final, 2)
-    else:
+    # Usar promedio_final del helper si está disponible; de lo contrario calcular con componentes presentes
+    promedio_final = promedios.get("promedio_final")
+    if promedio_final is None:
         promedio_final = round(
             (safe(actividades) + safe(practicas) + safe(parciales) + safe(examen_final)) / 4.0, 2
         )

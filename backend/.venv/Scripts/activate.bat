@@ -8,7 +8,7 @@ if defined _OLD_CODEPAGE (
     "%SystemRoot%\System32\chcp.com" 65001 > nul
 )
 
-set VIRTUAL_ENV=c:\Users\ursua\OneDrive\Documentos\PROGRAMACION\Python\siste-notas-react\backend\.venv
+set VIRTUAL_ENV=e:\DESARROLLO DE SIISTEMAS\sexto ciclo\profe jhon saboya\react-notas-sistem\siste-notas-react\backend\.venv
 
 if not defined PROMPT set PROMPT=$P$G
 
