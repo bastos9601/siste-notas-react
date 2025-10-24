@@ -21,7 +21,7 @@ async def obtener_configuracion(db: Session = Depends(get_db)):
     """Devuelve la configuración del sistema (pública). Crea una por defecto si no existe."""
     config = db.query(ConfiguracionSistema).first()
     if not config:
-        config = ConfiguracionSistema(nombre_sistema="Sistema de Gestión de Notas", logo_url=None)
+        config = ConfiguracionSistema(nombre_sistema="Sistema de Gestión de Notas", logo_url=None, modo_oscuro=False)
         db.add(config)
         db.commit()
         db.refresh(config)
@@ -36,11 +36,20 @@ async def actualizar_configuracion(
     """Actualiza la configuración del sistema (solo admin). Crea si no existe."""
     config = db.query(ConfiguracionSistema).first()
     if not config:
-        config = ConfiguracionSistema(nombre_sistema=data.nombre_sistema, logo_url=data.logo_url)
+        config = ConfiguracionSistema(
+            nombre_sistema=data.nombre_sistema,
+            logo_url=data.logo_url,
+            modo_oscuro=bool(getattr(data, 'modo_oscuro', False))
+        )
         db.add(config)
     else:
         config.nombre_sistema = data.nombre_sistema
         config.logo_url = data.logo_url
+        # Actualizar modo_oscuro si existe en payload
+        try:
+            config.modo_oscuro = bool(getattr(data, 'modo_oscuro', config.modo_oscuro))
+        except Exception:
+            pass
     db.commit()
     db.refresh(config)
     return config

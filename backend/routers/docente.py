@@ -20,7 +20,9 @@ from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, 
 from reportlab.lib.pagesizes import letter
 from promedio_calculator import calcular_promedios_alumno, calcular_promedios_asignatura
 from reportlab.lib import colors
-from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_JUSTIFY
+from pdf_style import build_header, apply_table_style, get_styles, build_separator
 
 router = APIRouter()
 
@@ -1031,11 +1033,27 @@ async def enviar_reporte_email(
         styles = getSampleStyleSheet()
         story = []
 
+        # Encabezado unificado
+        from models import ConfiguracionSistema
+        config = db.query(ConfiguracionSistema).first()
+        titulo_bar = (config.nombre_sistema if config and config.nombre_sistema else "Sistema de Notas")
+        subtitulo_bar = f"Reporte: {payload.get('tipo_evaluacion', tipo_eval)} - {payload.get('asignatura', asignatura)}"
+        story.append(build_header(titulo_bar, subtitulo_bar, logo_url=(config.logo_url if config else None)))
+        story.append(Spacer(1, 4))
+
+        # Estilos personalizados para centrado y encabezado informativo alineado a la izquierda
+        title_style = ParagraphStyle('TitleCentered', parent=styles['Title'], alignment=TA_CENTER)
+        info_style = ParagraphStyle('InfoLeft', parent=styles['Normal'], alignment=TA_LEFT)
+
+        # Información del encabezado
+        story.append(Paragraph(f"Docente: {docente.nombre_completo}", info_style))
+        story.append(Paragraph(f"Asignatura: {payload.get('asignatura', asignatura)}", info_style))
+        story.append(Paragraph(f"Tipo evaluación: {payload.get('tipo_evaluacion', tipo_eval)}", info_style))
+        story.append(Paragraph(f"Fecha envío: {datetime.now().strftime('%d/%m/%Y %H:%M')}", info_style))
+        story.append(build_separator())
+        story.append(Spacer(1, 6))
         titulo = f"Reporte de Notas - {payload.get('asignatura', asignatura)} ({payload.get('tipo_evaluacion', tipo_eval)})"
-        story.append(Paragraph(titulo, styles["Title"]))
-        story.append(Spacer(1, 12))
-        story.append(Paragraph(f"Docente: {docente.nombre_completo}", styles["Normal"]))
-        story.append(Paragraph(f"Fecha: {datetime.now().strftime('%d/%m/%Y %H:%M')}", styles["Normal"]))
+        story.append(Paragraph(titulo, title_style))
         story.append(Spacer(1, 12))
 
         # Encabezados y filas
@@ -1052,16 +1070,7 @@ async def enviar_reporte_email(
 
         data = [encabezados] + (filas if filas else [["-","-","-","-","-"]])
         table = Table(data, repeatRows=1)
-        table.setStyle(TableStyle([
-            ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#f0f0f0')),
-            ('TEXTCOLOR', (0,0), (-1,0), colors.black),
-            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
-            ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0,0), (-1,0), 10),
-            ('BOTTOMPADDING', (0,0), (-1,0), 8),
-            ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
-            ('FONTSIZE', (0,1), (-1,-1), 9),
-        ]))
+        apply_table_style(table)
         story.append(table)
 
         # Construir el PDF en memoria
@@ -1085,6 +1094,8 @@ async def enviar_reporte_email(
             file_bytes=pdf_bytes,
             mime_type="application/pdf",
         )
+        if not email_result.get("success", False):
+            raise HTTPException(status_code=500, detail=email_result.get("message", "No se pudo enviar el correo"))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"No se pudo enviar el correo: {e}")
 

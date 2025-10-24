@@ -19,6 +19,18 @@ print(f"Usando la base de datos en: {os.path.join(backend_dir, 'sistema_notas.db
 # Crear las tablas
 Base.metadata.create_all(bind=engine)
 
+# Asegurar columna modo_oscuro en configuracion_sistema (SQLite)
+try:
+    from sqlalchemy import text
+    with engine.connect() as conn:
+        info = conn.execute(text("PRAGMA table_info(configuracion_sistema)")).fetchall()
+        cols = [row[1] for row in info]  # nombre de columnas
+        if 'modo_oscuro' not in cols:
+            conn.execute(text("ALTER TABLE configuracion_sistema ADD COLUMN modo_oscuro INTEGER DEFAULT 0"))
+except Exception as _e:
+    # Silencioso en producción, solo asegurar que la app arranque
+    pass
+
 app = FastAPI(
     title="Sistema de Gestión de Notas",
     description="API para gestión académica de notas con roles de Admin, Docente y Alumno",

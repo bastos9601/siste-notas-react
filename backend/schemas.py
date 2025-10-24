@@ -226,6 +226,7 @@ class ReporteDocente(ReporteDocenteBase):
 class ConfiguracionSistemaBase(BaseModel):
     nombre_sistema: str
     logo_url: Optional[str] = None
+    modo_oscuro: Optional[bool] = False
 
 class ConfiguracionSistema(ConfiguracionSistemaBase):
     id: int

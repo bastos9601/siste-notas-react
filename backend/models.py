@@ -159,4 +159,5 @@ class ConfiguracionSistema(Base):
     id = Column(Integer, primary_key=True, index=True)
     nombre_sistema = Column(String(200), nullable=False, default="Sistema de Gestión de Notas")
     logo_url = Column(String(500), nullable=True)
+    modo_oscuro = Column(Boolean, nullable=False, default=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

@@ -373,7 +373,9 @@ async def promedio_por_asignatura_pdf(
     from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
     from reportlab.lib.pagesizes import letter
     from reportlab.lib import colors
-    from reportlab.lib.styles import getSampleStyleSheet
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY
+    from pdf_style import build_header, apply_table_style, build_separator
 
     # Buscar el alumno asociado al usuario
     alumno = db.query(Alumno).filter(Alumno.usuario_id == current_user.id).first()
@@ -442,11 +444,21 @@ async def promedio_por_asignatura_pdf(
     styles = getSampleStyleSheet()
 
     story = []
-    story.append(Paragraph("Promedios por Asignatura", styles["Title"]))
-    story.append(Spacer(1, 12))
-    story.append(Paragraph(f"Alumno: {alumno.nombre_completo}", styles["Normal"]))
-    story.append(Paragraph(f"Ciclo actual: {base_ciclo}", styles["Normal"]))
-    story.append(Paragraph(f"Fecha: {datetime.now().strftime('%d/%m/%Y %H:%M')}", styles["Normal"]))
+    title_style = ParagraphStyle('TitleCentered', parent=styles['Title'], alignment=TA_CENTER)
+    info_style = ParagraphStyle('InfoJustified', parent=styles['Normal'], alignment=TA_JUSTIFY)
+    # Configuración del sistema para título y logo
+    from models import ConfiguracionSistema
+    config = db.query(ConfiguracionSistema).first()
+    system_title = (config.nombre_sistema if config and config.nombre_sistema else 'Sistema de Notas')
+    system_logo = (config.logo_url if config else None)
+    story.append(build_header(system_title, 'Promedios por Asignatura', logo_url=system_logo))
+    story.append(Spacer(1, 4))
+    story.append(Paragraph(f'Alumno: {alumno.nombre_completo}', info_style))
+    story.append(Paragraph(f'Ciclo actual: {base_ciclo}', info_style))
+    story.append(Paragraph(f'Fecha: {datetime.now().strftime("%d/%m/%Y %H:%M")}', info_style))
+    story.append(build_separator())
+    story.append(Spacer(1, 6))
+    story.append(Paragraph('Promedios por Asignatura', title_style))
     story.append(Spacer(1, 12))
 
     data = [["Asignatura", "Total Notas", "Promedio", "Nota Máxima", "Nota Mínima", "Ciclo"]]
@@ -461,14 +473,7 @@ async def promedio_por_asignatura_pdf(
         ])
 
     table = Table(data, hAlign="LEFT")
-    table.setStyle(TableStyle([
-        ('BACKGROUND', (0,0), (-1,0), colors.lightgrey),
-        ('TEXTCOLOR', (0,0), (-1,0), colors.black),
-        ('ALIGN', (1,1), (-1,-1), 'CENTER'),
-        ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
-        ('BOTTOMPADDING', (0,0), (-1,0), 8),
-        ('GRID', (0,0), (-1,-1), 0.5, colors.grey)
-    ]))
+    apply_table_style(table)
 
     story.append(table)
     doc.build(story)
@@ -554,7 +559,9 @@ async def resumen_pdf_asignatura(
     from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
     from reportlab.lib.pagesizes import letter
     from reportlab.lib import colors
-    from reportlab.lib.styles import getSampleStyleSheet
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY
+    from pdf_style import build_header, apply_table_style, build_separator
 
     # Buscar alumno
     alumno = db.query(Alumno).filter(Alumno.usuario_id == current_user.id).first()
@@ -606,14 +613,24 @@ async def resumen_pdf_asignatura(
     styles = getSampleStyleSheet()
 
     story = []
-    story.append(Paragraph("Resumen de Promedios", styles["Title"]))
-    story.append(Spacer(1, 12))
-    story.append(Paragraph(f"Alumno: {alumno.nombre_completo}", styles["Normal"]))
-    story.append(Paragraph(f"Asignatura: {asignatura.nombre}", styles["Normal"]))
-    docente_nombre = asignatura.docente.nombre_completo if asignatura.docente else "—"
-    story.append(Paragraph(f"Docente: {docente_nombre}", styles["Normal"]))
-    story.append(Paragraph(f"Ciclo: {asignatura.ciclo}", styles["Normal"]))
-    story.append(Paragraph(f"Fecha: {datetime.now().strftime('%d/%m/%Y %H:%M')}", styles["Normal"]))
+    title_style = ParagraphStyle('TitleCentered', parent=styles['Title'], alignment=TA_CENTER)
+    info_style = ParagraphStyle('InfoJustified', parent=styles['Normal'], alignment=TA_JUSTIFY)
+    # Configuración del sistema para título y logo
+    from models import ConfiguracionSistema
+    config = db.query(ConfiguracionSistema).first()
+    system_title = (config.nombre_sistema if config and config.nombre_sistema else 'Sistema de Notas')
+    system_logo = (config.logo_url if config else None)
+    story.append(build_header(system_title, 'Resumen de Promedios', logo_url=system_logo))
+    story.append(Spacer(1, 4))
+    story.append(Paragraph(f'Alumno: {alumno.nombre_completo}', info_style))
+    story.append(Paragraph(f'Asignatura: {asignatura.nombre}', info_style))
+    docente_nombre = asignatura.docente.nombre_completo if asignatura.docente else '—'
+    story.append(Paragraph(f'Docente: {docente_nombre}', info_style))
+    story.append(Paragraph(f'Ciclo: {asignatura.ciclo}', info_style))
+    story.append(Paragraph(f'Fecha: {datetime.now().strftime("%d/%m/%Y %H:%M")}', info_style))
+    story.append(build_separator())
+    story.append(Spacer(1, 6))
+    story.append(Paragraph('Resumen de Promedios', title_style))
     story.append(Spacer(1, 12))
 
     data = [
@@ -625,15 +642,7 @@ async def resumen_pdf_asignatura(
         ["Promedio Final", f"{safe(promedio_final):.2f}"],
     ]
     table = Table(data, hAlign="LEFT")
-    table.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
-        ("TEXTCOLOR", (0, 0), (-1, 0), colors.black),
-        ("ALIGN", (0, 0), (-1, -1), "LEFT"),
-        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("FONTSIZE", (0, 0), (-1, -1), 10),
-        ("BOTTOMPADDING", (0, 0), (-1, 0), 8),
-        ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
-    ]))
+    apply_table_style(table)
     story.append(table)
 
     doc.build(story)
