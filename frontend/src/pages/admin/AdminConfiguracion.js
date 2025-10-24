@@ -1,15 +1,18 @@
 import React, { useEffect, useState } from 'react';
 import { adminService } from '../../services/adminService';
-import { UploadCloud, Save, Image as ImageIcon, Settings } from 'lucide-react';
+import { UploadCloud, Save, Image as ImageIcon, Settings, Moon, Sun } from 'lucide-react';
+import { useTheme } from '../../contexts/ThemeContext';
 
 const AdminConfiguracion = () => {
   const [nombreSistema, setNombreSistema] = useState('');
   const [logoUrl, setLogoUrl] = useState('');
+  const [modoOscuro, setModoOscuro] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
+  const { isDark, setDark } = useTheme();
 
   useEffect(() => {
     const loadConfig = async () => {
@@ -17,6 +20,12 @@ const AdminConfiguracion = () => {
         const config = await adminService.getConfiguracionPublica();
         setNombreSistema(config?.nombre_sistema || 'Sistema de Gestión de Notas');
         setLogoUrl(config?.logo_url || '');
+        if (typeof config?.modo_oscuro === 'boolean') {
+          setModoOscuro(config.modo_oscuro);
+          setDark(config.modo_oscuro);
+        } else {
+          setModoOscuro(isDark);
+        }
       } catch (e) {
         console.error('Error al cargar configuración:', e);
         setError('No se pudo cargar la configuración.');
@@ -56,9 +65,12 @@ const AdminConfiguracion = () => {
       const updated = await adminService.actualizarConfiguracion({
         nombre_sistema: nombreSistema,
         logo_url: logoUrl || null,
+        modo_oscuro: modoOscuro,
       });
       setNombreSistema(updated.nombre_sistema);
       setLogoUrl(updated.logo_url || '');
+      setModoOscuro(!!updated.modo_oscuro);
+      setDark(!!updated.modo_oscuro);
       setMessage('Configuración guardada.');
     } catch (e) {
       console.error('Error guardando configuración:', e);
@@ -94,22 +106,22 @@ const AdminConfiguracion = () => {
         <div className="mb-4 p-3 bg-green-50 border border-green-200 text-green-700 rounded">{message}</div>
       )}
 
-      <div className="bg-white rounded-lg shadow p-5 border border-gray-200">
+      <div className="bg-white rounded-lg shadow p-5 border border-gray-200 dark:bg-gray-800 dark:border-gray-700">
         <div className="mb-5">
-          <label className="block text-sm font-medium text-gray-700 mb-2">Nombre del sistema</label>
+          <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-200">Nombre del sistema</label>
           <input
             type="text"
             value={nombreSistema}
             onChange={(e) => setNombreSistema(e.target.value)}
-            className="w-full border rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full border rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-900 dark:border-gray-700 dark:text-gray-100"
             placeholder="Ej. Sistema de Gestión de Notas"
           />
         </div>
 
         <div className="mb-5">
-          <label className="block text-sm font-medium text-gray-700 mb-2">Logo del sistema</label>
+          <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-200">Logo del sistema</label>
           <div className="flex items-center gap-4">
-            <div className="w-32 h-32 border rounded flex items-center justify-center bg-gray-50">
+            <div className="w-32 h-32 border rounded flex items-center justify-center bg-gray-50 dark:bg-gray-900 dark:border-gray-700">
               {logoUrl ? (
                 <img src={logoUrl} alt="Logo" className="max-w-full max-h-full object-contain" />
               ) : (
@@ -128,6 +140,21 @@ const AdminConfiguracion = () => {
                 {'El archivo se sube a Cloudinary y se guarda solo el URL.'}
               </p>
             </div>
+          </div>
+        </div>
+
+        <div className="mb-6">
+          <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-200">Modo oscuro</label>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => { const v = !modoOscuro; setModoOscuro(v); setDark(v); }}
+              className="inline-flex items-center gap-2 px-3 py-2 rounded border border-gray-300 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700"
+            >
+              {modoOscuro ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
+              <span>{modoOscuro ? 'Activado' : 'Desactivado'}</span>
+            </button>
+            <span className="text-xs text-gray-500">Aplica tema oscuro a toda la interfaz.</span>
           </div>
         </div>
 

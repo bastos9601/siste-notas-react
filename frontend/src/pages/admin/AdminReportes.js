@@ -4,12 +4,14 @@ import { useNavigate } from 'react-router-dom';
 import api from '../../services/api';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { drawHeader, drawInfoWithSeparator, autoTableTheme, drawFooter, fetchImageDataUrl } from '../../utils/pdfStyle';
 
 const AdminReportes = () => {
   const navigate = useNavigate();
   const [reportes, setReportes] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [config, setConfig] = useState(null);
 
   useEffect(() => {
     const fetchReportes = async () => {
@@ -28,23 +30,18 @@ const AdminReportes = () => {
     fetchReportes();
   }, []);
 
-  const handleDescargar = async (reporte) => {
-    try {
-      const resp = await api.get(`/admin/reportes/${reporte.id}/archivo`, { responseType: 'blob' });
-      const url = window.URL.createObjectURL(new Blob([resp.data]));
-      const link = document.createElement('a');
-      link.href = url;
-      const nombre = reporte.archivo_path?.split('\\').pop() || reporte.archivo_path?.split('/').pop() || `reporte_${reporte.id}.csv`;
-      link.setAttribute('download', nombre);
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.URL.revokeObjectURL(url);
-    } catch (err) {
-      console.error('Error al descargar archivo:', err);
-      alert('No fue posible descargar el archivo del reporte.');
-    }
-  };
+  // Cargar configuración del sistema (incluye logo_url)
+  useEffect(() => {
+    const fetchConfig = async () => {
+      try {
+        const resp = await api.get('/configuracion');
+        setConfig(resp.data || null);
+      } catch (e) {
+        console.error('Error al cargar configuración:', e);
+      }
+    };
+    fetchConfig();
+  }, []);
 
   const handleVer = async (reporte) => {
     try {
@@ -89,24 +86,34 @@ const AdminReportes = () => {
 
       const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
 
-      doc.setFontSize(16);
-      doc.text('Reporte de Notas', 40, 40);
-      doc.setFontSize(12);
-      const meta = [
+      // Preparar logo si hay URL en configuración
+      let logoDataUrl = null;
+      try {
+        if (config?.logo_url) {
+          logoDataUrl = await fetchImageDataUrl(config.logo_url);
+        }
+      } catch (e) {
+        console.warn('No fue posible obtener el logo desde la URL:', e);
+      }
+
+      const headerY = drawHeader(doc, {
+        title: config?.nombre_sistema || 'Sistema de Notas',
+        subtitle: `Reporte: ${reporte.tipo_evaluacion || '-' } - ${reporte.asignatura || '-'}`,
+        logoDataUrl
+      });
+      const nextY = drawInfoWithSeparator(doc, [
         `Docente: ${reporte.nombre_docente || '-'}`,
-        `Asignatura: ${reporte.asignatura || '-'}`,
-        `Tipo evaluación: ${reporte.tipo_evaluacion || '-'}`,
+        "",
         `Fecha envío: ${new Date(reporte.fecha_envio).toLocaleString()}`
-      ];
-      let y = 60;
-      meta.forEach(m => { doc.text(m, 40, y); y += 16; });
+      ], headerY + 20);
+      let y = nextY + 8;
 
       autoTable(doc, {
-        startY: y + 8,
+        startY: y,
         head: [headers],
         body: rows,
-        styles: { fontSize: 10 },
-        headStyles: { fillColor: [30, 64, 175], textColor: [255, 255, 255] },
+        ...autoTableTheme(),
+        margin: { left: 40, right: 40 },
         columnStyles: (() => {
           const idx = headers.findIndex(h => /calific/i.test(h));
           return idx >= 0 ? { [idx]: { halign: 'center' } } : {};
@@ -118,7 +125,6 @@ const AdminReportes = () => {
             const normalizedText = rawText.replace(',', '.');
             const match = normalizedText.match(/-?\d+(?:\.\d+)?/);
             const grade = match ? parseFloat(match[0]) : NaN;
-
             if (!Number.isNaN(grade)) {
               if (grade >= 13 && grade <= 20) {
                 data.cell.styles.textColor = [34, 197, 94];
@@ -129,7 +135,8 @@ const AdminReportes = () => {
               }
             }
           }
-        }
+        },
+        didDrawPage: drawFooter(doc)
       });
 
       const blob = doc.output('blob');

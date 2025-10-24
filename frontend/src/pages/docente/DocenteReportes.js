@@ -4,6 +4,7 @@ import api from '../../services/api';
 import { FileText, FileSpreadsheet, Mail } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { BRAND_COLOR, drawHeader, drawInfoWithSeparator, autoTableTheme, drawFooter, fetchImageDataUrl } from '../../utils/pdfStyle';
 
 const DocenteReportes = () => {
   const { user } = useAuth();
@@ -18,6 +19,7 @@ const DocenteReportes = () => {
   const [emailToSend, setEmailToSend] = useState('');
   const [sendingEmail, setSendingEmail] = useState(false);
   const [emailError, setEmailError] = useState('');
+  const [config, setConfig] = useState(null);
 
   // Cargar asignaturas al iniciar
   useEffect(() => {
@@ -35,6 +37,18 @@ const DocenteReportes = () => {
   }, []);
 
   // Cargar tipos de evaluación al iniciar
+  useEffect(() => {
+    const fetchConfig = async () => {
+      try {
+        const resp = await api.get('/configuracion');
+        setConfig(resp.data || null);
+      } catch (e) {
+        console.error('Error al cargar configuración:', e);
+      }
+    };
+    fetchConfig();
+  }, []);
+
   useEffect(() => {
     const fetchTiposEvaluacion = async () => {
       try {
@@ -162,7 +176,8 @@ const DocenteReportes = () => {
       setShowEmailModal(false);
     } catch (err) {
       console.error('Error al enviar por correo:', err);
-      setEmailError('Error al enviar el reporte por correo. Intente nuevamente.');
+      const backendDetail = err?.response?.data?.detail || err?.response?.data?.message;
+      setEmailError(backendDetail ? `Error: ${backendDetail}` : 'Error al enviar el reporte por correo. Intente nuevamente.');
     } finally {
       setSendingEmail(false);
     }
@@ -178,7 +193,7 @@ const DocenteReportes = () => {
     alert('Exportación a Excel no implementada aún.');
   };
 
-  const handleExportarPDF = () => {
+  const handleExportarPDF = async () => {
     if (!reporteData) {
       setError('No hay datos para exportar.');
       return;
@@ -186,28 +201,25 @@ const DocenteReportes = () => {
     try {
       const doc = new jsPDF({ unit: 'mm', format: 'a4' });
 
-      const brandColor = [37, 99, 235];
       const titulo = 'Sistema de Notas';
       const subtitulo = `Reporte: ${reporteData.tipoEvaluacion} - ${reporteData.asignatura}`;
       const docenteNombre = user?.nombre || user?.nombre_completo || 'Docente';
       const fecha = new Date().toLocaleString();
 
-      const pageWidth = doc.internal.pageSize.getWidth();
+      let logoDataUrl = null;
+      try {
+        if (config?.logo_url) {
+          logoDataUrl = await fetchImageDataUrl(config.logo_url);
+        }
+      } catch (e) {
+        console.warn('No fue posible obtener el logo desde la URL:', e);
+      }
 
-      doc.setFillColor(...brandColor);
-      doc.rect(0, 0, pageWidth, 22, 'F');
-      doc.setTextColor(255, 255, 255);
-      doc.setFontSize(16);
-      doc.text(titulo, 14, 12);
-      doc.setFontSize(11);
-      doc.text(subtitulo, 14, 18);
-
-      doc.setTextColor(33, 33, 33);
-      doc.setFontSize(11);
-      doc.text(`Docente: ${docenteNombre}`, 14, 28);
-      doc.text(`Fecha: ${fecha}`, 14, 34);
-      doc.setDrawColor(200, 200, 200);
-      doc.line(14, 38, pageWidth - 14, 38);
+      const headerY = drawHeader(doc, { title: (config?.nombre_sistema || titulo), subtitle: subtitulo, logoDataUrl });
+      const nextY = drawInfoWithSeparator(doc, [
+        `Docente: ${docenteNombre}`,
+        `Fecha: ${fecha}`
+      ], headerY + 6);
 
       const head = [[
         'Alumno',
@@ -228,12 +240,9 @@ const DocenteReportes = () => {
       autoTable(doc, {
         head,
         body,
-        startY: 42,
-        margin: { left: 14, right: 14, top: 42 },
-        styles: { fontSize: 10, cellPadding: 3, textColor: 33 },
-        headStyles: { fillColor: brandColor, textColor: 255, fontStyle: 'bold' },
-        alternateRowStyles: { fillColor: [245, 247, 250] },
-        theme: 'grid',
+        startY: nextY + 6,
+        margin: { left: 14, right: 14 },
+        ...autoTableTheme(),
         columnStyles: {
           0: { cellWidth: 70 },
           1: { cellWidth: 16, halign: 'center' },
@@ -241,17 +250,10 @@ const DocenteReportes = () => {
           3: { cellWidth: 35 },
           4: { cellWidth: 25, halign: 'right' }
         },
-        didDrawPage: (data) => {
-          const pw = doc.internal.pageSize.getWidth();
-          const ph = doc.internal.pageSize.getHeight();
-          doc.setFontSize(9);
-          doc.setTextColor(130, 130, 130);
-          doc.text(`Página ${data.pageNumber}`, 14, ph - 10);
-          doc.text('© Sistema de Notas', pw - 14, ph - 10, { align: 'right' });
-        }
+        didDrawPage: drawFooter(doc)
       });
 
-      const finalY = doc.lastAutoTable ? doc.lastAutoTable.finalY : 42;
+      const finalY = doc.lastAutoTable ? doc.lastAutoTable.finalY : nextY + 6;
       const total = (reporteData.alumnos || []).length;
       doc.setFontSize(11);
       doc.setTextColor(33, 33, 33);
@@ -262,7 +264,13 @@ const DocenteReportes = () => {
       const timestamp = new Date().toISOString().slice(0, 19).replace(/[-:T]/g, '');
       const fileName = `Reporte_${safeAsignatura}_${safeTipo}_${timestamp}.pdf`;
 
-      doc.save(fileName);
+      const blob = doc.output('blob');
+      const url = URL.createObjectURL(blob);
+      const win = window.open(url, '_blank');
+      if (!win) {
+        // Fallback si el navegador bloquea popups: descargar
+        doc.save(fileName);
+      }
     } catch (err) {
       console.error('Error generando PDF:', err);
       setError('Ocurrió un error generando el PDF.');
@@ -355,7 +363,7 @@ const DocenteReportes = () => {
                 onClick={handleExportarPDF}
               >
                 <FileText className="mr-1" size={16} />
-                PDF
+                Ver PDF
               </button>
             </div>
           </div>

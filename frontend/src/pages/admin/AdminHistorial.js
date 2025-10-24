@@ -4,6 +4,8 @@ import { Search, BookOpen, FileText, Trash2, X } from 'lucide-react';
 import AdminHistorialAcademico from './AdminHistorialAcademico';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import api from '../../services/api';
+import { drawHeader, drawInfoWithSeparator, autoTableTheme, drawFooter, fetchImageDataUrl } from '../../utils/pdfStyle';
 
 const AdminHistorial = () => {
   const [alumnos, setAlumnos] = useState([]);
@@ -12,6 +14,7 @@ const AdminHistorial = () => {
   const [selectedAlumno, setSelectedAlumno] = useState(null);
   const [showHistorialModal, setShowHistorialModal] = useState(false);
   const [selectedCiclo, setSelectedCiclo] = useState(null);
+  const [config, setConfig] = useState(null);
 
   useEffect(() => {
     const fetchAlumnos = async () => {
@@ -27,6 +30,19 @@ const AdminHistorial = () => {
     };
 
     fetchAlumnos();
+  }, []);
+
+  // Cargar configuración del sistema para obtener logo_url
+  useEffect(() => {
+    const fetchConfig = async () => {
+      try {
+        const resp = await api.get('/configuracion');
+        setConfig(resp.data || null);
+      } catch (e) {
+        console.error('Error al cargar configuración:', e);
+      }
+    };
+    fetchConfig();
   }, []);
 
   const handleSearch = (e) => {
@@ -75,16 +91,25 @@ const AdminHistorial = () => {
       }
 
       const doc = new jsPDF({ unit: 'pt', format: 'a4' });
-      const pageWidth = doc.internal.pageSize.getWidth();
+
+      // Preparar logo si hay URL en configuración
+      let logoDataUrl = null;
+      try {
+        if (config?.logo_url) {
+          logoDataUrl = await fetchImageDataUrl(config.logo_url);
+        }
+      } catch (e) {
+        console.warn('No fue posible obtener el logo desde la URL:', e);
+      }
+
+      const headerY = drawHeader(doc, { title: (config?.nombre_sistema || 'Sistema de Notas'), subtitle: 'Historial Académico', logoDataUrl });
+      const nextY = drawInfoWithSeparator(doc, [
+        `Alumno: ${alumno.nombre_completo || ''}`,
+        ...(alumno.dni ? [`DNI: ${alumno.dni}`] : [])
+      ], headerY + 6);
+
       const marginLeft = 40;
-
-      doc.setFontSize(16);
-      doc.text('Historial Académico', pageWidth / 2, 40, { align: 'center' });
-      doc.setFontSize(12);
-      doc.text(`Alumno: ${alumno.nombre_completo || ''}`, marginLeft, 65);
-      if (alumno.dni) doc.text(`DNI: ${alumno.dni}`, marginLeft, 82);
-
-      let y = 105;
+      let y = nextY + 12;
       historial.forEach((ciclo) => {
         doc.setFontSize(12);
         doc.text(String(ciclo.ciclo), marginLeft, y);
@@ -105,9 +130,10 @@ const AdminHistorial = () => {
           startY: y,
           head: [['Asignatura', 'Nota', 'Estado']],
           body: rows,
+          ...autoTableTheme(),
           styles: { fontSize: 10, cellPadding: 4 },
-          headStyles: { fillColor: [245, 245, 245] },
-          margin: { left: marginLeft, right: marginLeft }
+          margin: { left: marginLeft, right: marginLeft },
+          didDrawPage: drawFooter(doc)
         });
         y = doc.lastAutoTable.finalY + 18;
       });

@@ -75,12 +75,12 @@ const Sidebar = ({ isOpen, onClose }) => {
     <>
       {/* Sidebar para desktop */}
       <div className="hidden lg:fixed lg:inset-y-0 lg:flex lg:w-64 lg:flex-col">
-        <div className="flex flex-col flex-grow bg-white border-r border-gray-200 pt-5 pb-4 overflow-y-auto">
+        <div className="flex flex-col flex-grow bg-white border-r border-gray-200 pt-5 pb-4 overflow-y-auto dark:bg-gray-800 dark:border-gray-700">
           <div className="flex items-center flex-shrink-0 px-4">
             {config?.logo_url ? (
               <img src={config.logo_url} alt="Logo" className="h-10 w-10 object-contain mr-3" />
             ) : null}
-            <h2 className="text-lg font-semibold text-gray-900">{config?.nombre_sistema || 'Menú'}</h2>
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">{config?.nombre_sistema || 'Menú'}</h2>
           </div>
           <div className="mt-5 flex-grow flex flex-col">
             <nav className="flex-1 px-2 space-y-1">
@@ -107,18 +107,18 @@ const Sidebar = ({ isOpen, onClose }) => {
       {/* Sidebar para móvil */}
       <div className={`fixed inset-y-0 left-0 z-30 w-64 bg-white border-r border-gray-200 transform transition-transform duration-300 ease-in-out lg:hidden ${
         isOpen ? 'translate-x-0' : '-translate-x-full'
-      }`}>
+      }` + ' dark:bg-gray-800 dark:border-gray-700'}>
         <div className="flex flex-col h-full">
-          <div className="flex items-center justify-between px-4 py-5 border-b border-gray-200">
+          <div className="flex items-center justify-between px-4 py-5 border-b border-gray-200 dark:border-gray-700">
             <div className="flex items-center">
               {config?.logo_url ? (
                 <img src={config.logo_url} alt="Logo" className="h-8 w-8 object-contain mr-2" />
               ) : null}
-              <h2 className="text-lg font-semibold text-gray-900">{config?.nombre_sistema || 'Menú'}</h2>
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">{config?.nombre_sistema || 'Menú'}</h2>
             </div>
             <button
               onClick={onClose}
-              className="p-2 rounded-md text-gray-400 hover:text-gray-500 hover:bg-gray-100"
+              className="p-2 rounded-md text-gray-400 hover:text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-300"
             >
               <X className="h-5 w-5" />
             </button>
