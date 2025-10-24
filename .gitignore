@@ -84,3 +84,11 @@ node_modules/
 .cache/
 dist/
 build/
+
+# dependencias
+node_modules/
+
+# cachés
+.cache/
+frontend/node_modules/
+frontend/.cache/
