@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List, Dict
-from database import get_db
+from core.database import get_db
 from models import Usuario, Docente, Asignatura, Alumno, Nota, matriculas
 from schemas import (
     Asignatura as AsignaturaSchema,
@@ -10,7 +10,7 @@ from schemas import (
 )
 from pydantic import BaseModel, EmailStr
 from typing import Optional, Any
-from auth import require_role, verify_password, get_password_hash
+from core.auth import require_role, verify_password, get_password_hash
 from datetime import datetime
 import os
 import csv
@@ -18,11 +18,13 @@ import io
 from models import ReporteDocente, ReporteArchivoDocente
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 from reportlab.lib.pagesizes import letter
-from promedio_calculator import calcular_promedios_alumno, calcular_promedios_asignatura
+from services.promedios import calcular_promedios_alumno, calcular_promedios_asignatura
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_JUSTIFY
-from pdf_style import build_header, apply_table_style, get_styles, build_separator
+from utils.pdf import build_header, apply_table_style, get_styles, build_separator
+from services.email_service import send_grades_published_notification
+from services.email_service import send_report_with_attachment_bytes
 
 router = APIRouter()
 
@@ -784,7 +786,7 @@ async def enviar_todas_las_notas(
     
     # Intentar enviar notificación por email
     try:
-        from email_config import send_grades_published_notification
+        from services.email_service import send_grades_published_notification
         email_result = await send_grades_published_notification(
             email=alumno.usuario.email,
             nombre_alumno=alumno.nombre_completo,
@@ -1084,7 +1086,7 @@ async def enviar_reporte_email(
 
     # Enviar correo con adjunto (bytes en memoria)
     try:
-        from email_config import send_report_with_attachment_bytes
+        from services.email_service import send_report_with_attachment_bytes
         email_result = await send_report_with_attachment_bytes(
             email=email,
             nombre_docente=docente.nombre_completo,

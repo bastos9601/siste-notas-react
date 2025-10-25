@@ -182,17 +182,22 @@ ${response.instructions}
     }
   };
 
-  // Importar CSV
+  // Importar CSV/Excel
   const handleImportCSVSubmit = async () => {
     if (!csvFile) return;
     try {
       setImporting(true);
-      const result = await adminService.importarAlumnosCSV(csvFile);
+      const name = (csvFile.name || '').toLowerCase();
+      const type = csvFile.type || '';
+      const isExcel = name.endsWith('.xlsx') || name.endsWith('.xls') || type.includes('spreadsheet');
+      const result = isExcel
+        ? await adminService.importarAlumnosExcel(csvFile)
+        : await adminService.importarAlumnosCSV(csvFile);
       setImportResult(result);
       await loadAlumnos();
     } catch (error) {
-      console.error('Error al importar CSV:', error);
-      const errorMessage = error.response?.data?.detail || 'Error al importar el archivo CSV.';
+      console.error('Error al importar archivo:', error);
+      const errorMessage = error.response?.data?.detail || 'Error al importar el archivo.';
       alert(errorMessage);
     } finally {
       setImporting(false);
@@ -239,7 +244,7 @@ ${response.instructions}
             onClick={() => setShowImportModal(true)}
             className="btn-secondary"
           >
-            Importar CSV
+            Importar CSV/Excel
           </button>
           <button
             onClick={() => setShowModal(true)}
@@ -575,14 +580,14 @@ ${response.instructions}
         <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
           <div className="relative top-20 mx-auto p-5 border w-[480px] shadow-lg rounded-md bg-white">
             <div className="mt-3">
-              <h3 className="text-lg font-medium text-gray-900 mb-4">Importar Alumnos desde CSV</h3>
+              <h3 className="text-lg font-medium text-gray-900 mb-4">Importar Alumnos desde CSV/Excel</h3>
               <div className="space-y-4">
                 <p className="text-sm text-gray-600">
                   Formato esperado de columnas: <strong>nombre_completo,dni,ciclo,email</strong> [<em>password</em>] [<em>seccion</em>]
                 </p>
                 <input
                   type="file"
-                  accept=".csv"
+                  accept=".csv,.xlsx,.xls"
                   className="input-field"
                   onChange={(e) => setCsvFile(e.target.files?.[0] || null)}
                 />

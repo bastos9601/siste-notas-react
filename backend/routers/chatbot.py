@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from typing import List, Dict, Optional
-from auth import require_role
+from core.auth import require_role
 import os
 from dotenv import load_dotenv
 from sqlalchemy import func
@@ -16,9 +16,9 @@ except Exception:
 
 # Nuevas dependencias para consultas de datos
 from sqlalchemy.orm import Session
-from database import get_db
+from core.database import get_db
 from models import Docente, Asignatura, Alumno, Nota, matriculas, ReporteDocente, HistorialAcademico, AsignaturaHistorial
-from promedio_calculator import calcular_promedios_alumno
+from services.promedios import calcular_promedios_alumno
 
 router = APIRouter()
 
@@ -136,6 +136,35 @@ def _responder_intentos_admin(texto: str, db: Session, current_user) -> Optional
 
     if parts:
         return "En el sistema: " + "; ".join(parts) + "."
+
+    # Conteo de alumnos por ciclo específico (ej. "alumnos en el primer ciclo", "alumnos ciclo 1")
+    ciclo_num = None
+    import re
+    # Detectar "ciclo N"
+    if "alumnos" in t and "ciclo" in t:
+        m = re.search(r"ciclo\s*(\d+)", t)
+        if m:
+            try:
+                ciclo_num = int(m.group(1))
+            except Exception:
+                ciclo_num = None
+    # Detectar ordinales comunes
+    if ciclo_num is None and "alumnos" in t:
+        if "primer ciclo" in t or "primero ciclo" in t:
+            ciclo_num = 1
+        elif "segundo ciclo" in t:
+            ciclo_num = 2
+        elif "tercer ciclo" in t or "tercero ciclo" in t:
+            ciclo_num = 3
+        elif "cuarto ciclo" in t:
+            ciclo_num = 4
+        elif "quinto ciclo" in t:
+            ciclo_num = 5
+        elif "sexto ciclo" in t:
+            ciclo_num = 6
+    if ciclo_num is not None:
+        cnt = db.query(Alumno).filter(Alumno.ciclo == ciclo_num).count()
+        return f"Alumnos en ciclo {ciclo_num}: {cnt}"
 
     # Docentes que enviaron reportes
     patrones_docentes_con_reportes = [

@@ -4,8 +4,8 @@ from fastapi.staticfiles import StaticFiles
 from routers import auth, admin, docente, alumno, historial
 # Añadir import del nuevo router de chatbot
 from routers import chatbot
-from auth import require_role  # para dependencias de rol en rutas directas
-from database import engine, Base, get_db
+from core.auth import require_role  # para dependencias de rol en rutas directas
+from core.database import engine, Base, get_db
 from models import Usuario
 from sqlalchemy.orm import Session
 import os
@@ -44,7 +44,7 @@ app.add_middleware(
     allow_origins=["*"],  # Permitir todas las origenes para desarrollo
     allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["*"],
+    allow_headers=["*"]
 )
 
 # Servir archivos estáticos para logos subidos localmente
@@ -115,7 +115,7 @@ async def debug_users(db: Session = Depends(get_db)):
 async def debug_database():
     """Endpoint de debug para verificar configuración de base de datos"""
     import os
-    from database import DATABASE_URL
+    from core.database import DATABASE_URL
     return {
         "database_url": DATABASE_URL,
         "current_directory": os.getcwd(),
@@ -178,4 +178,5 @@ async def enviar_reporte_email_direct(
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    port = int(os.getenv("PORT", "8000"))
+    uvicorn.run(app, host="0.0.0.0", port=port)

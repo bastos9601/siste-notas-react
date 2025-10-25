@@ -41,6 +41,16 @@ export const adminService = {
     });
     return response.data;
   },
+
+  // Importación Excel de alumnos
+  async importarAlumnosExcel(file) {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await api.post('/admin/alumnos/import-excel', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    });
+    return response.data;
+  },
   
   // Registrar siguiente ciclo (no matricular, solo actualizar campo ciclo)
   async registrarSiguienteCicloAlumno(id) {

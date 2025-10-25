@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List, Optional
-from database import get_db
+from core.database import get_db
 from models import Alumno, Asignatura, Nota, HistorialAcademico, AsignaturaHistorial, NotaHistorial, matriculas
 from schemas import (
     HistorialAcademico as HistorialAcademicoSchema,
@@ -11,7 +11,7 @@ from schemas import (
     NotaHistorial as NotaHistorialSchema,
     NotaHistorialCreate
 )
-from auth import require_role, get_current_user
+from core.auth import require_role, get_current_user
 from sqlalchemy import func, and_
 import re
 

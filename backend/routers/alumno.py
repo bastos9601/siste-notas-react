@@ -1,21 +1,21 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List
-from database import get_db
+from core.database import get_db
 from models import Usuario, Alumno, Asignatura, Nota, matriculas
 from schemas import (
     Asignatura as AsignaturaSchema,
     Nota as NotaSchema,
     Alumno as AlumnoSchema
 )
-from auth import require_role, get_password_hash, verify_password
+from core.auth import require_role, get_password_hash, verify_password
 from pydantic import BaseModel
 import os
 import re
 from fastapi import BackgroundTasks
 from sqlalchemy.orm import Session
 from fastapi import Depends
-from promedio_calculator import calcular_promedios_alumno
+from services.promedios import calcular_promedios_alumno
 
 router = APIRouter()
 
@@ -374,8 +374,8 @@ async def promedio_por_asignatura_pdf(
     from reportlab.lib.pagesizes import letter
     from reportlab.lib import colors
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-    from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY
-    from pdf_style import build_header, apply_table_style, build_separator
+    from reportlab.lib.enums import TA_CENTER, TA_LEFT
+    from utils.pdf import build_header, apply_table_style, build_separator
 
     # Buscar el alumno asociado al usuario
     alumno = db.query(Alumno).filter(Alumno.usuario_id == current_user.id).first()
@@ -445,7 +445,7 @@ async def promedio_por_asignatura_pdf(
 
     story = []
     title_style = ParagraphStyle('TitleCentered', parent=styles['Title'], alignment=TA_CENTER)
-    info_style = ParagraphStyle('InfoJustified', parent=styles['Normal'], alignment=TA_JUSTIFY)
+    info_style = ParagraphStyle('InfoJustified', parent=styles['Normal'], alignment=TA_LEFT)
     # Configuración del sistema para título y logo
     from models import ConfiguracionSistema
     config = db.query(ConfiguracionSistema).first()
@@ -472,7 +472,7 @@ async def promedio_por_asignatura_pdf(
             str(r["ciclo"])
         ])
 
-    table = Table(data, hAlign="LEFT")
+    table = Table(data, repeatRows=1)
     apply_table_style(table)
 
     story.append(table)
@@ -560,8 +560,8 @@ async def resumen_pdf_asignatura(
     from reportlab.lib.pagesizes import letter
     from reportlab.lib import colors
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-    from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY
-    from pdf_style import build_header, apply_table_style, build_separator
+    from reportlab.lib.enums import TA_CENTER, TA_LEFT
+    from utils.pdf import build_header, apply_table_style, build_separator
 
     # Buscar alumno
     alumno = db.query(Alumno).filter(Alumno.usuario_id == current_user.id).first()
@@ -614,13 +614,14 @@ async def resumen_pdf_asignatura(
 
     story = []
     title_style = ParagraphStyle('TitleCentered', parent=styles['Title'], alignment=TA_CENTER)
-    info_style = ParagraphStyle('InfoJustified', parent=styles['Normal'], alignment=TA_JUSTIFY)
+    info_style = ParagraphStyle('InfoJustified', parent=styles['Normal'], alignment=TA_LEFT)
     # Configuración del sistema para título y logo
     from models import ConfiguracionSistema
     config = db.query(ConfiguracionSistema).first()
     system_title = (config.nombre_sistema if config and config.nombre_sistema else 'Sistema de Notas')
     system_logo = (config.logo_url if config else None)
-    story.append(build_header(system_title, 'Resumen de Promedios', logo_url=system_logo))
+    subtitulo_bar = f"Reporte: Mis Notas - {asignatura.nombre}"
+    story.append(build_header(system_title, subtitulo_bar, logo_url=system_logo))
     story.append(Spacer(1, 4))
     story.append(Paragraph(f'Alumno: {alumno.nombre_completo}', info_style))
     story.append(Paragraph(f'Asignatura: {asignatura.nombre}', info_style))
@@ -630,18 +631,19 @@ async def resumen_pdf_asignatura(
     story.append(Paragraph(f'Fecha: {datetime.now().strftime("%d/%m/%Y %H:%M")}', info_style))
     story.append(build_separator())
     story.append(Spacer(1, 6))
-    story.append(Paragraph('Resumen de Promedios', title_style))
+    story.append(Paragraph(f'Reporte de Notas - {asignatura.nombre}', title_style))
     story.append(Spacer(1, 12))
 
-    data = [
-        ["Tipo de Evaluación", "Promedio"],
-        ["Actividades", f"{safe(actividades):.2f}"],
-        ["Prácticas", f"{safe(practicas):.2f}"],
-        ["Parciales", f"{safe(parciales):.2f}"],
-        ["Examen Final", f"{safe(examen_final):.2f}"],
-        ["Promedio Final", f"{safe(promedio_final):.2f}"],
+    encabezados = ["Alumno", "Ciclo", "Asignatura", "Tipo de Evaluación", "Calificación"]
+    filas = [
+        [alumno.nombre_completo, str(asignatura.ciclo), asignatura.nombre, "Actividades", f"{safe(actividades):.2f}"],
+        [alumno.nombre_completo, str(asignatura.ciclo), asignatura.nombre, "Prácticas", f"{safe(practicas):.2f}"],
+        [alumno.nombre_completo, str(asignatura.ciclo), asignatura.nombre, "Parciales", f"{safe(parciales):.2f}"],
+        [alumno.nombre_completo, str(asignatura.ciclo), asignatura.nombre, "Examen Final", f"{safe(examen_final):.2f}"],
+        [alumno.nombre_completo, str(asignatura.ciclo), asignatura.nombre, "Promedio Final", f"{safe(promedio_final):.2f}"],
     ]
-    table = Table(data, hAlign="LEFT")
+    data = [encabezados] + filas
+    table = Table(data, repeatRows=1)
     apply_table_style(table)
     story.append(table)
 

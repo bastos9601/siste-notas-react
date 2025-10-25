@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
 from sqlalchemy.orm import Session, joinedload
 from typing import List
-from database import get_db
+from core.database import get_db
 from models import Usuario, Alumno, Docente, Asignatura, Nota, matriculas, HistorialAcademico, AsignaturaHistorial, NotaHistorial, ReporteDocente, ReporteArchivoDocente
 from schemas import (
     AlumnoCreate, AlumnoUpdate, Alumno as AlumnoSchema,
@@ -10,7 +10,7 @@ from schemas import (
     MatriculaCreate, Matricula,
     ReporteDocente as ReporteDocenteSchema
 )
-from auth import require_role, get_password_hash, verify_password
+from core.auth import require_role, get_password_hash, verify_password
 from fastapi import BackgroundTasks
 from sqlalchemy.orm import Session
 from starlette.responses import FileResponse
@@ -159,29 +159,20 @@ def registrar_alumno_en_siguiente_ciclo(db: Session, alumno: Alumno) -> dict:
             )
             db.add(nota_historial)
     
-    # Agregar la asignatura "Cultura" al historial si el alumno está pasando del ciclo I al II
-    if ciclo_actual == "I" and next_ciclo == "II":
-        asignatura_cultura = AsignaturaHistorial(
-            historial_id=historial.id,
-            nombre="Cultura",
-            promedio=15.0  # Promedio predeterminado
-        )
-        db.add(asignatura_cultura)
-        db.flush()
-        
-        # Agregar una nota para la asignatura Cultura
-        nota_cultura = NotaHistorial(
-            asignatura_id=asignatura_cultura.id,
-            calificacion=15.0,
-            tipo_nota="Promedio Final",
-            fecha_registro=func.now()
-        )
-        db.add(nota_cultura)
+
 
     asignaturas_siguiente = db.query(Asignatura).filter(Asignatura.ciclo == get_base_ciclo(next_ciclo)).all()
 
     # Actualizar solo el campo ciclo del alumno (registrar avance de ciclo)
     alumno.ciclo = next_ciclo
+    # Eliminar las matrículas del ciclo anterior para no trasladarlas
+    if asignaturas_actuales_ids:
+        db.execute(
+            matriculas.delete().where(
+                matriculas.c.alumno_id == alumno.id,
+                matriculas.c.asignatura_id.in_(asignaturas_actuales_ids)
+            )
+        )
     db.commit()
 
     asignaturas_siguiente_ids = [a.id for a in asignaturas_siguiente]
@@ -189,9 +180,9 @@ def registrar_alumno_en_siguiente_ciclo(db: Session, alumno: Alumno) -> dict:
     resultado["registrado"] = True
     resultado["asignaturas_siguiente_ids"] = asignaturas_siguiente_ids
     if asignaturas_siguiente_ids:
-        resultado["mensaje"] = f"Registrado en el siguiente ciclo ({next_ciclo}). Existen {len(asignaturas_siguiente_ids)} asignaturas disponibles en ese ciclo. Se ha generado el historial académico."
+        resultado["mensaje"] = f"Registrado en el siguiente ciclo ({next_ciclo}). Se generó el historial del ciclo anterior. No se trasladaron matrículas ni asignaturas."
     else:
-        resultado["mensaje"] = f"Registrado en el siguiente ciclo ({next_ciclo}). No hay asignaturas definidas para ese ciclo. Se ha generado el historial académico."
+        resultado["mensaje"] = f"Registrado en el siguiente ciclo ({next_ciclo}). Se generó el historial del ciclo anterior. No se trasladaron matrículas ni asignaturas."
     resultado["puede_avanzar"] = True
 
     return resultado
@@ -629,6 +620,190 @@ async def importar_alumnos_csv(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error al importar CSV: {str(e)}"
+        )
+
+# Nuevo: Importar alumnos desde Excel (XLS/XLSX)
+@router.post("/alumnos/import-excel")
+async def importar_alumnos_excel(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_role("admin"))
+):
+    """Importar alumnos desde un archivo Excel (XLS/XLSX).
+    Encabezados aceptados (flexibles): nombre_completo | nombre + apellidos, dni | documento,
+    ciclo | semestre, email | correo, [password | contraseña], [seccion | sección],
+    [fecha_nacimiento], [genero | sexo], [telefono | celular].
+    Usa la primera hoja del libro y la primera fila como encabezados."""
+    try:
+        raw = await file.read()
+        from io import BytesIO
+        try:
+            from openpyxl import load_workbook
+        except Exception:
+            # Si openpyxl no está instalado, devolvemos un error claro
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                                detail="Falta dependencia 'openpyxl' para importar Excel. Instálala en backend.")
+
+        wb = load_workbook(filename=BytesIO(raw), data_only=True)
+        ws = wb.active
+
+        # Obtener encabezados de la primera fila
+        header_row = next(ws.iter_rows(min_row=1, max_row=1, values_only=True))
+        headers = [str(h).strip() if h is not None else "" for h in header_row]
+
+        # Construir filas como diccionarios
+        excel_rows = []
+        for values in ws.iter_rows(min_row=2, values_only=True):
+            row_dict = {}
+            for i, h in enumerate(headers):
+                row_dict[h] = values[i] if i < len(values) else None
+            excel_rows.append(row_dict)
+
+        total = 0
+        inserted = 0
+        skipped = []
+        errors = []
+
+        # Normalizador de encabezados
+        def norm(s: str) -> str:
+            s = unicodedata.normalize("NFKD", str(s)).encode("ascii", "ignore").decode("ascii")
+            s = s.lower().strip()
+            for ch in ["_", "-", ".", ";", ":"]:
+                s = s.replace(ch, " ")
+            s = re.sub(r"\s+", " ", s)
+            return s
+
+        fieldnames = headers or []
+        norm_to_original = {norm(fn): fn for fn in fieldnames}
+
+        def find_header(*candidates):
+            for c in candidates:
+                key = norm(c)
+                if key in norm_to_original:
+                    return norm_to_original[key]
+            return None
+
+        for row in excel_rows:
+            total += 1
+
+            # Mapear campos flexibles
+            h_nombre_completo = find_header(
+                "nombre completo", "nombres y apellidos", "nombre y apellidos",
+                "alumno", "estudiante", "nombreyapellido"
+            )
+            h_nombre = find_header("nombre", "nombres")
+            h_apellidos = find_header("apellidos", "apellido")
+            h_dni = find_header(
+                "dni", "documento", "numero documento", "nro documento",
+                "num documento", "num doc", "numero de documento", "cedula", "identidad"
+            )
+            h_ciclo = find_header("ciclo", "semestre", "periodo", "nivel")
+            h_seccion = find_header("seccion", "sección", "grupo", "paralelo", "sec")
+            h_email = find_header("email", "correo", "correo electronico", "e mail", "mail")
+            h_password = find_header("password", "contrasena", "contraseña", "clave")
+            h_telefono = find_header("telefono", "celular", "tel")
+            h_genero = find_header("genero", "sexo")
+            h_fnac = find_header("fecha nacimiento", "fechanacimiento", "fecha de nacimiento", "nacimiento", "f nacimiento")
+
+            # Obtener valores
+            if h_nombre_completo:
+                nombre = str(row.get(h_nombre_completo) or "").strip()
+            else:
+                nombre = (" ".join([
+                    str(row.get(h_nombre) or "").strip(),
+                    str(row.get(h_apellidos) or "").strip()
+                ])).strip()
+
+            dni = str(row.get(h_dni) or "").strip()
+            ciclo_raw = str(row.get(h_ciclo) or "").strip()
+            email = str(row.get(h_email) or "").strip().lower()
+            password = str(row.get(h_password) or "").strip()
+            seccion = str(row.get(h_seccion) or "").strip().upper()
+            telefono = (row.get(h_telefono) or None)
+            genero = (row.get(h_genero) or None)
+
+            # Fecha de nacimiento opcional
+            fecha_nacimiento = None
+            fn_val = row.get(h_fnac) if h_fnac else None
+            if fn_val:
+                try:
+                    from datetime import datetime
+                    for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y", "%m/%d/%Y"):
+                        try:
+                            fecha_nacimiento = datetime.strptime(str(fn_val).strip(), fmt).date()
+                            break
+                        except Exception:
+                            pass
+                except Exception:
+                    fecha_nacimiento = None
+
+            # Validaciones básicas
+            if not nombre or not dni or not ciclo_raw or not email:
+                skipped.append({
+                    "row": total, "dni": dni, "email": email,
+                    "reason": "Campos obligatorios faltantes"
+                })
+                continue
+
+            # Inferir sección desde el ciclo si no viene explícita
+            ciclo_base = get_base_ciclo(ciclo_raw)
+            if not seccion:
+                msec = re.search(r"([A-Z])$", ciclo_raw.strip(), flags=re.IGNORECASE)
+                if msec:
+                    seccion = msec.group(1).upper()
+
+            ciclo_final = ciclo_base if not seccion or seccion.lower() in ["", "sin seccion", "sin sección"] else f"{ciclo_base} {seccion.upper()}"
+
+            # Evitar duplicados por DNI o email
+            if db.query(Alumno).filter(Alumno.dni == dni).first():
+                skipped.append({"row": total, "dni": dni, "email": email, "reason": "DNI ya existente"})
+                continue
+            if db.query(Usuario).filter(Usuario.email == email).first():
+                skipped.append({"row": total, "dni": dni, "email": email, "reason": "Email ya existente"})
+                continue
+
+            # Generar password si no viene
+            if not password:
+                import secrets, string
+                chars = string.ascii_letters + string.digits
+                password = ''.join(secrets.choice(chars) for _ in range(8))
+            hashed_password = get_password_hash(password)
+
+            # Crear usuario y alumno
+            db_user = Usuario(
+                nombre=nombre.split()[0] if nombre else "Alumno",
+                email=email,
+                password_hash=hashed_password,
+                rol="alumno"
+            )
+            db.add(db_user)
+            db.flush()
+
+            db_alumno = Alumno(
+                nombre_completo=nombre,
+                dni=dni,
+                fecha_nacimiento=fecha_nacimiento,
+                genero=genero,
+                telefono=telefono,
+                ciclo=ciclo_final,
+                usuario_id=db_user.id
+            )
+            db.add(db_alumno)
+            db.commit()
+            inserted += 1
+
+        return {
+            "total_rows": total,
+            "inserted": inserted,
+            "skipped": len(skipped),
+            "skipped_details": skipped,
+            "errors": errors
+        }
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al importar Excel: {str(e)}"
         )
 
 @router.get("/alumnos/{alumno_id}", response_model=AlumnoSchema)
@@ -1096,7 +1271,7 @@ async def matricular_alumno(
         
         # Intentar enviar email
         try:
-            from email_config import send_password_email
+            from services.email_service import send_password_email
             email_result = await send_password_email(
                 email=usuario.email,
                 nombre=alumno.nombre_completo,
@@ -1261,7 +1436,7 @@ async def enviar_contrasena_alumno(
     
     # Intentar enviar email
     try:
-        from email_config import send_password_email
+        from services.email_service import send_password_email
         email_result = await send_password_email(
             email=usuario.email,
             nombre=alumno.nombre_completo,
@@ -1345,7 +1520,7 @@ async def enviar_contrasena_docente(
     
     # Intentar enviar email
     try:
-        from email_config import send_password_email
+        from services.email_service import send_password_email
         email_result = await send_password_email(
             email=usuario.email,
             nombre=docente.nombre_completo,
