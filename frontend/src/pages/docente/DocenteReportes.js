@@ -244,11 +244,11 @@ const DocenteReportes = () => {
         margin: { left: 14, right: 14 },
         ...autoTableTheme(),
         columnStyles: {
-          0: { cellWidth: 70 },
+          0: { cellWidth: 60 },
           1: { cellWidth: 16, halign: 'center' },
-          2: { cellWidth: 40 },
-          3: { cellWidth: 35 },
-          4: { cellWidth: 25, halign: 'right' }
+          2: { cellWidth: 40,halign:"center" },
+          3: { cellWidth: 35, halign:"center"},
+          4: { cellWidth: 30, halign: 'center' }
         },
         didDrawPage: drawFooter(doc)
       });

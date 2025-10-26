@@ -1,0 +1,1 @@
+# Paquete utils: utilidades y helpers transversales

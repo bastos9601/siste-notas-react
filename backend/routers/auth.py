@@ -2,10 +2,10 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from datetime import timedelta
-from database import get_db
+from core.database import get_db
 from models import Usuario, Alumno, Docente
 from schemas import Token, UsuarioCreate, Usuario as UsuarioSchema
-from auth import (
+from core.auth import (
     verify_password, 
     get_password_hash, 
     create_access_token, 
@@ -108,7 +108,7 @@ async def recuperar_contrasena(
     
     # Intentar enviar email
     try:
-        from email_config import send_password_recovery_email
+        from services.email_service import send_password_recovery_email
         
         # Obtener el nombre del usuario según su rol
         nombre_usuario = user.nombre

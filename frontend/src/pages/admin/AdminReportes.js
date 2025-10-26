@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { BarChart, FileSpreadsheet, FileText, Download, Eye, Trash } from 'lucide-react';
+import { BarChart, FileSpreadsheet, FileText, Download, Eye, Trash, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import api from '../../services/api';
 import { jsPDF } from 'jspdf';
@@ -12,8 +12,12 @@ const AdminReportes = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [config, setConfig] = useState(null);
+  // Visor PDF modal
+  const [pdfUrl, setPdfUrl] = useState(null);
+  const [viewerOpen, setViewerOpen] = useState(false);
+  const [selectedReporte, setSelectedReporte] = useState(null);
 
-  useEffect(() => {
+  useEffect(() => { 
     const fetchReportes = async () => {
       setLoading(true);
       setError(null);
@@ -52,10 +56,12 @@ const AdminReportes = () => {
       const nombre = reporte.archivo_path?.split('\\').pop() || reporte.archivo_path?.split('/').pop() || '';
       const ext = (nombre && nombre.includes('.')) ? nombre.split('.').pop().toLowerCase() : '';
 
-      // Si es un PDF ya generado por el docente, abrirlo directamente
+      // Si es un PDF ya generado por el docente, abrirlo en visor interno
       if (contentType.includes('pdf') || ext === 'pdf') {
-        const pdfUrl = window.URL.createObjectURL(resp.data);
-        window.open(pdfUrl, '_blank');
+        const url = window.URL.createObjectURL(resp.data);
+        setPdfUrl(url);
+        setSelectedReporte(reporte);
+        setViewerOpen(true);
         return;
       }
 
@@ -81,10 +87,31 @@ const AdminReportes = () => {
       }
       const firstLine = lines[0];
       const delimiter = firstLine.includes(';') ? ';' : (firstLine.includes('\t') ? '\t' : ',');
-      const headers = firstLine.split(delimiter).map(h => h.trim());
-      const rows = lines.slice(1).map(line => line.split(delimiter).map(c => c.trim()));
+      const rawHeaders = firstLine.split(delimiter).map(h => h.trim());
+      const rawRows = lines.slice(1).map(line => line.split(delimiter).map(c => c.trim()));
 
-      const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
+      // Reordenar columnas a un estándar común (referencia DocenteReportes)
+      const idxAlumno = rawHeaders.findIndex(h => /alumn|estudiant|nombre/i.test(h));
+      const idxCiclo = rawHeaders.findIndex(h => /ciclo|grado|nivel/i.test(h));
+      const idxAsignatura = rawHeaders.findIndex(h => /asignatura|curso/i.test(h));
+      const idxTipo = rawHeaders.findIndex(h => /tipo.*evalu|evaluaci[oó]n|tipo/i.test(h));
+      const idxCalificacion = rawHeaders.findIndex(h => /calific|nota|puntaje/i.test(h));
+
+      const orderedDefs = [
+        { idx: idxAlumno, label: 'Alumno' },
+        { idx: idxCiclo, label: 'Ciclo' },
+        { idx: idxAsignatura, label: 'Asignatura' },
+        { idx: idxTipo, label: 'Tipo de Evaluación' },
+        { idx: idxCalificacion, label: 'Calificación' },
+      ].filter(d => d.idx >= 0);
+      const remainingIndices = rawHeaders.map((_, i) => i).filter(i => !orderedDefs.some(d => d.idx === i));
+      const headers = [...orderedDefs.map(d => d.label), ...remainingIndices.map(i => rawHeaders[i])];
+      const rows = rawRows.map(r => [
+        ...orderedDefs.map(d => r[d.idx] || ''),
+        ...remainingIndices.map(i => r[i] || ''),
+      ]);
+
+      const doc = new jsPDF({ unit: 'mm', format: 'a4' });
 
       // Preparar logo si hay URL en configuración
       let logoDataUrl = null;
@@ -103,23 +130,24 @@ const AdminReportes = () => {
       });
       const nextY = drawInfoWithSeparator(doc, [
         `Docente: ${reporte.nombre_docente || '-'}`,
-        "",
-        `Fecha envío: ${new Date(reporte.fecha_envio).toLocaleString()}`
-      ], headerY + 20);
-      let y = nextY + 8;
+        `Fecha: ${new Date(reporte.fecha_envio).toLocaleString()}`
+      ], headerY + 6);
 
       autoTable(doc, {
-        startY: y,
+        startY: nextY + 6,
         head: [headers],
         body: rows,
         ...autoTableTheme(),
-        margin: { left: 40, right: 40 },
-        columnStyles: (() => {
-          const idx = headers.findIndex(h => /calific/i.test(h));
-          return idx >= 0 ? { [idx]: { halign: 'center' } } : {};
-        })(),
+        margin: { left: 14, right: 14 },
+        columnStyles: {
+          0: { cellWidth: 60 },
+          1: { cellWidth: 16, halign: 'center' },
+          2: { cellWidth: 40, halign:"center" },
+          3: { cellWidth: 35, halign:"center" },
+          4: { cellWidth: 30, halign: 'center' }
+        },
         didParseCell: (data) => {
-          const gradeColIdx = headers.findIndex(h => /calific/i.test(h));
+          const gradeColIdx = headers.findIndex(h => /calific/i.test(h) || h === 'Calificación');
           if (data.section === 'body' && data.column.index === gradeColIdx) {
             const rawText = Array.isArray(data.cell.text) ? data.cell.text.join(' ') : String(data.cell.text || data.cell.raw || '');
             const normalizedText = rawText.replace(',', '.');
@@ -139,9 +167,18 @@ const AdminReportes = () => {
         didDrawPage: drawFooter(doc)
       });
 
+      // Totales simples al pie
+      const finalY = doc.lastAutoTable ? doc.lastAutoTable.finalY : (nextY + 6);
+      const total = rows.length;
+      doc.setFontSize(11);
+      doc.setTextColor(33, 33, 33);
+      doc.text(`Total alumnos: ${total}`, 14, finalY + 8);
+
       const blob = doc.output('blob');
       const url = window.URL.createObjectURL(blob);
-      window.open(url, '_blank');
+      setPdfUrl(url);
+      setSelectedReporte(reporte);
+      setViewerOpen(true);
     } catch (err) {
       console.error('Error al generar PDF:', err);
       alert('No fue posible generar el PDF del reporte.');
@@ -162,6 +199,50 @@ const AdminReportes = () => {
 
   return (
     <div className="space-y-6">
+      {/* Modal visor PDF */}
+      {viewerOpen && (
+        <div className="fixed inset-0 z-50 bg-black bg-opacity-40 flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-5xl overflow-hidden">
+            <div className="flex items-center justify-between p-4 border-b">
+              <div>
+                <h3 className="text-lg font-semibold">Reporte: {selectedReporte?.tipo_evaluacion} - {selectedReporte?.asignatura}</h3>
+                <p className="text-sm text-gray-500">Docente: {selectedReporte?.nombre_docente} • Fecha: {selectedReporte ? new Date(selectedReporte.fecha_envio).toLocaleString() : ''}</p>
+              </div>
+              <div className="flex items-center space-x-2">
+                {pdfUrl && (
+                  <a
+                    href={pdfUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                  >Abrir en nueva pestaña</a>
+                )}
+                {pdfUrl && (
+                  <a
+                    href={pdfUrl}
+                    download={`Reporte_${(selectedReporte?.asignatura || 'asignatura').replace(/\s+/g, '_')}_${(selectedReporte?.tipo_evaluacion || 'evaluacion').replace(/\s+/g, '_')}.pdf`}
+                    className="px-3 py-2 bg-green-600 text-white rounded hover:bg-green-700"
+                  >Descargar</a>
+                )}
+                <button
+                  onClick={() => { setViewerOpen(false); setPdfUrl(null); setSelectedReporte(null); }}
+                  className="px-3 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300 inline-flex items-center"
+                >
+                  <X className="mr-1 h-4 w-4" /> Cerrar
+                </button>
+              </div>
+            </div>
+            <div className="p-0">
+              {pdfUrl ? (
+                <iframe src={pdfUrl} title="Reporte PDF" className="w-full h-[75vh]" />
+              ) : (
+                <div className="p-6 text-center text-gray-500">Generando vista previa...</div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="bg-white rounded-lg shadow p-6">
         <div className="flex items-center mb-4">
           <BarChart className="mr-3 h-6 w-6 text-blue-600" />
@@ -214,20 +295,19 @@ const AdminReportes = () => {
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{r.tipo_evaluacion}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{new Date(r.fecha_envio).toLocaleString()}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-2">
-                      {/*  */}
                       <button
-                        className="inline-flex items-center px-3 py-2 rounded bg-gray-700 text-white hover:bg-gray-800"
+                        className="inline-flex items-center px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700"
                         onClick={() => handleVer(r)}
-                        title="Ver PDF"
+                        title="Ver"
                       >
-                        <Eye className="mr-2 h-4 w-4" /> 
+                        <Eye className="mr-2 h-4 w-4" /> Ver
                       </button>
                       <button
                         className="inline-flex items-center px-3 py-2 rounded bg-red-600 text-white hover:bg-red-700"
                         onClick={() => handleEliminar(r)}
                         title="Eliminar reporte"
                       >
-                        <Trash className="mr-2 h-4 w-4" /> 
+                        <Trash className="mr-2 h-4 w-4" /> Eliminar
                       </button>
                     </td>
                   </tr>

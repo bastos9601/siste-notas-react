@@ -1,9 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Request
 from sqlalchemy.orm import Session
-from database import get_db
+from core.database import get_db
 from models import ConfiguracionSistema, Usuario
 from schemas import ConfiguracionSistema as ConfigSchema, ConfiguracionSistemaBase
-from auth import require_role
+from core.auth import require_role
 import os
 import uuid
 

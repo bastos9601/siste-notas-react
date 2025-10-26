@@ -1,7 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { FileText, TrendingUp, Award, BookOpen, Search, ArrowLeft, ChevronDown, ChevronRight } from 'lucide-react';
+import { FileText, TrendingUp, Award, BookOpen, Search, ArrowLeft, ChevronDown, ChevronRight, X } from 'lucide-react';
 import { alumnoService } from '../../services/alumnoService';
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import api from '../../services/api';
+import { drawHeader, drawInfoWithSeparator, autoTableTheme, drawFooter, fetchImageDataUrl } from '../../utils/pdfStyle';
 
 const AlumnoNotas = () => {
   const { asignaturaId } = useParams();
@@ -14,6 +18,12 @@ const AlumnoNotas = () => {
   const [selectedAsignatura, setSelectedAsignatura] = useState(asignaturaId || '');
   const [searchTerm, setSearchTerm] = useState('');
   const [expandedAsignaturas, setExpandedAsignaturas] = useState(new Set());
+  // Perfil, configuración y visor PDF
+  const [perfil, setPerfil] = useState(null);
+  const [config, setConfig] = useState(null);
+  const [pdfUrl, setPdfUrl] = useState(null);
+  const [viewerOpen, setViewerOpen] = useState(false);
+  const [viewerAsignaturaName, setViewerAsignaturaName] = useState('');
 
   useEffect(() => {
     loadData();
@@ -21,17 +31,28 @@ const AlumnoNotas = () => {
 
   const loadData = async () => {
     try {
-      const [notasData, asignaturasData, promedioData, promediosAsignaturaData] = await Promise.all([
+      const [
+        notasData,
+        asignaturasData,
+        promedioData,
+        promediosAsignaturaData,
+        perfilData,
+        configResp
+      ] = await Promise.all([
         alumnoService.getMisNotas(),
         alumnoService.getMisAsignaturas(),
         alumnoService.getMiPromedio(),
-        alumnoService.getPromedioPorAsignatura()
+        alumnoService.getPromedioPorAsignatura(),
+        alumnoService.getMiPerfil(),
+        api.get('/configuracion')
       ]);
       
       setNotas(notasData);
       setAsignaturas(asignaturasData);
       setPromedioGeneral(promedioData);
       setPromediosPorAsignatura(promediosAsignaturaData);
+      setPerfil(perfilData);
+      setConfig(configResp?.data || configResp);
     } catch (error) {
       console.error('Error al cargar datos:', error);
     } finally {
@@ -76,14 +97,95 @@ const AlumnoNotas = () => {
 
   const handleDescargarPDF = async (asignaturaId, asignaturaNombre) => {
     try {
-      const response = await alumnoService.descargarResumenPDF(asignaturaId);
-      const blob = new Blob([response.data], { type: 'application/pdf' });
-      const url = window.URL.createObjectURL(blob);
-      const viewer = window.open(url, '_blank');
-      if (viewer) viewer.focus();
+      const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+      let logoDataUrl = null;
+      try {
+        if (config?.logo_url) {
+          logoDataUrl = await fetchImageDataUrl(config.logo_url);
+        }
+      } catch (e) {
+        console.warn('No fue posible cargar el logo:', e);
+      }
+
+      const headerY = drawHeader(doc, {
+        title: (config?.nombre_sistema || 'Sistema de Notas').toUpperCase(),
+        subtitle: `Reporte: Mis Notas - ${asignaturaNombre}`,
+        logoDataUrl,
+      });
+
+      const anyNote = notas.find(n => n.asignatura_id === asignaturaId);
+      const docenteNombre = anyNote?.asignatura?.docente?.nombre_completo || '-';
+
+      const infoLines = [
+        `Alumno: ${perfil?.nombre_completo || '-'}`,
+        `Asignatura: ${asignaturaNombre || '-'}`,
+        `Docente: ${docenteNombre}`,
+        perfil?.ciclo ? `Ciclo: ${perfil.ciclo}` : null,
+        `Fecha: ${new Date().toLocaleString()}`
+      ].filter(Boolean);
+      const nextY = drawInfoWithSeparator(doc, infoLines, headerY + 6);
+
+      const notasAsignatura = getNotasPorAsignatura(asignaturaId);
+      const p = calcularPromediosPorAsignatura(notasAsignatura);
+
+      const head = [[
+        'Alumno',
+        'Ciclo',
+        'Asignatura',
+        'Tipo de Evaluación',
+        'Calificación'
+      ]];
+
+      const alumno = perfil?.nombre_completo || '-';
+      const ciclo = perfil?.ciclo || '-';
+      const asignatura = asignaturaNombre || '-';
+
+      const rows = [
+        [alumno, ciclo, asignatura, 'Actividades', p.cantidadActividades > 0 ? p.promedioActividades.toFixed(2) : '-'],
+        [alumno, ciclo, asignatura, 'Prácticas', p.cantidadPracticas > 0 ? p.promedioPracticas.toFixed(2) : '-'],
+        [alumno, ciclo, asignatura, 'Parciales', p.cantidadParciales > 0 ? p.promedioParciales.toFixed(2) : '-'],
+        [alumno, ciclo, asignatura, 'Examen Final', p.tieneExamenFinal ? p.notaExamenFinal.toFixed(2) : '-'],
+      ];
+      if (p.cantidadProyectos > 0) {
+        rows.push([alumno, ciclo, asignatura, 'Proyectos', p.promedioProyectos.toFixed(2)]);
+      }
+      rows.push([alumno, ciclo, asignatura, 'Promedio Final', p.promedioFinal > 0 ? p.promedioFinal.toFixed(2) : '-']);
+
+      autoTable(doc, {
+        head,
+        body: rows,
+        startY: nextY + 6,
+        margin: { left: 14, right: 14 },
+        ...autoTableTheme(),
+        columnStyles: {
+          0: { cellWidth: 60 },
+          1: { cellWidth: 16, halign: 'center' },
+          2: { cellWidth: 40 ,halign:"center"},
+          3: { cellWidth: 35, halign:"center" },
+          4: { cellWidth: 30, halign: 'center' },
+        },
+        didDrawPage: drawFooter(doc),
+      });
+
+      const finalY = doc.lastAutoTable ? doc.lastAutoTable.finalY : nextY + 6;
+      doc.setFontSize(10);
+      doc.setTextColor(33, 33, 33);
+      doc.text(`Fórmula: ${p.formulaTexto}`, 14, finalY + 8);
+
+      const safeAsignatura = asignatura.replace(/\s+/g, '_');
+      const safeAlumno = alumno.replace(/\s+/g, '_');
+      const timestamp = new Date().toISOString().slice(0, 19).replace(/[-:T]/g, '');
+      const fileName = `Notas_${safeAlumno}_${safeAsignatura}_${timestamp}.pdf`;
+
+      const blob = doc.output('blob');
+      const url = URL.createObjectURL(blob);
+      setPdfUrl(url);
+      setViewerAsignaturaName(asignaturaNombre);
+      setViewerOpen(true);
+      // Para descarga directa: doc.save(fileName);
     } catch (error) {
-      console.error('Error al visualizar el PDF:', error);
-      alert('No se pudo visualizar el PDF. Inténtalo más tarde.');
+      console.error('Error al generar PDF:', error);
+      alert('No se pudo generar el PDF. Inténtalo nuevamente más tarde.');
     }
   };
   const getEstadoNota = (calificacion) => {
@@ -199,6 +301,57 @@ const AlumnoNotas = () => {
 
   return (
     <div className="space-y-6">
+      {viewerOpen && (
+        <div className="fixed inset-0 z-50 bg-black bg-opacity-40 flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-5xl overflow-hidden">
+            <div className="flex items-center justify-between p-4 border-b">
+              <div>
+                <h3 className="text-lg font-semibold">Reporte: Mis Notas{viewerAsignaturaName ? ` — ${viewerAsignaturaName}` : ''}</h3>
+                <p className="text-sm text-gray-500">
+                  Alumno: {perfil?.nombre_completo || '-'} • Ciclo: {perfil?.ciclo || '-'}
+                </p>
+              </div>
+              <div className="flex items-center space-x-2">
+                {pdfUrl && (
+                  <a
+                    href={pdfUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                    title="Abrir en nueva pestaña"
+                  >
+                    Abrir en nueva pestaña
+                  </a>
+                )}
+                {pdfUrl && (
+                  <a
+                    href={pdfUrl}
+                    download={`Notas_${(perfil?.nombre_completo || 'alumno').replace(/\\s+/g, '_')}.pdf`}
+                    className="px-3 py-2 bg-green-600 text-white rounded hover:bg-green-700"
+                    title="Descargar PDF"
+                  >
+                    Descargar
+                  </a>
+                )}
+                <button
+                  onClick={() => { setViewerOpen(false); setPdfUrl(null); }}
+                  className="px-3 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300"
+                  title="Cerrar visor"
+                >
+                  Cerrar
+                </button>
+              </div>
+            </div>
+            <div className="p-0">
+              {pdfUrl ? (
+                <iframe src={pdfUrl} title="Reporte PDF" className="w-full h-[75vh]" />
+              ) : (
+                <div className="p-6 text-center text-gray-500">Generando vista previa...</div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-4">
