@@ -61,7 +61,7 @@ export function drawInfoWithSeparator(doc, lines, startY = 28) {
 export function autoTableTheme() {
   return {
     styles: { fontSize: 10, cellPadding: 3, textColor: TEXT_DARK },
-    headStyles: { fillColor: BRAND_COLOR, textColor: 255, fontStyle: 'bold' },
+    headStyles: { fillColor: BRAND_COLOR, textColor: 255, fontStyle: 'bold' ,halign:"center"},
     alternateRowStyles: { fillColor: LIGHT_BG },
     theme: 'grid',
   };
@@ -76,5 +76,5 @@ export function drawFooter(doc, label = '© Sistema de Notas') {
     doc.setTextColor(130, 130, 130);
     doc.text(`Página ${data.pageNumber}`, 14, ph - 10);
     doc.text(label, pw - 14, ph - 10, { align: 'right' });
-  };
+  };  
 }

@@ -563,12 +563,34 @@ async def importar_alumnos_csv(
 
             # Inferir sección desde el ciclo si no viene explícita
             ciclo_base = get_base_ciclo(ciclo_raw)
+            # Inferir sección solo si no viene explícita y el texto termina con una letra sola separada por espacio
             if not seccion:
-                msec = re.search(r"([A-Z])$", ciclo_raw.strip(), flags=re.IGNORECASE)
+                msec = re.search(r"\s([A-Z])$", ciclo_raw.strip(), flags=re.IGNORECASE)
                 if msec:
                     seccion = msec.group(1).upper()
 
-            ciclo_final = ciclo_base if not seccion or seccion.lower() in ["", "sin seccion", "sin sección"] else f"{ciclo_base} {seccion.upper()}"
+            # Normalizar valor de sección
+            seccion = seccion.upper() if seccion else ""
+
+            # Reglas de consistencia solicitadas
+            if not seccion or seccion.lower() in ["", "sin seccion", "sin sección"]:
+                # Solo número romano → asignar al ciclo general
+                # Evitar crear 'III' cuando existan sólo ciclos con sección (III A, III B, ...)
+                exists_general = db.query(Alumno).filter(Alumno.ciclo == ciclo_base).first()
+                exists_sectioned = db.query(Alumno).filter(Alumno.ciclo.like(f"{ciclo_base} %")).first()
+                if not exists_general and exists_sectioned:
+                    skipped.append({"row": total, "dni": dni, "email": email, "reason": f"Ciclo general '{ciclo_base}' inexistente; especifique sección"})
+                    continue
+                ciclo_final = ciclo_base
+            else:
+                # Número + sección → validar sección: una sola letra A-Z y no numerales romanos típicos
+                if not re.fullmatch(r"[A-Z]", seccion):
+                    skipped.append({"row": total, "dni": dni, "email": email, "reason": "Sección inválida; use una sola letra A-Z"})
+                    continue
+                if seccion in {"I", "V", "X"}:
+                    skipped.append({"row": total, "dni": dni, "email": email, "reason": "Sección inválida; no usar numerales romanos como sección"})
+                    continue
+                ciclo_final = f"{ciclo_base} {seccion}"
 
             # Evitar duplicados por DNI o email
             if db.query(Alumno).filter(Alumno.dni == dni).first():
@@ -747,12 +769,34 @@ async def importar_alumnos_excel(
 
             # Inferir sección desde el ciclo si no viene explícita
             ciclo_base = get_base_ciclo(ciclo_raw)
+            # Inferir sección solo si no viene explícita y el texto termina con una letra sola separada por espacio
             if not seccion:
-                msec = re.search(r"([A-Z])$", ciclo_raw.strip(), flags=re.IGNORECASE)
+                msec = re.search(r"\s([A-Z])$", ciclo_raw.strip(), flags=re.IGNORECASE)
                 if msec:
                     seccion = msec.group(1).upper()
 
-            ciclo_final = ciclo_base if not seccion or seccion.lower() in ["", "sin seccion", "sin sección"] else f"{ciclo_base} {seccion.upper()}"
+            # Normalizar valor de sección
+            seccion = seccion.upper() if seccion else ""
+
+            # Reglas de consistencia solicitadas
+            if not seccion or seccion.lower() in ["", "sin seccion", "sin sección"]:
+                # Solo número romano → asignar al ciclo general
+                # Evitar crear 'III' cuando existan sólo ciclos con sección (III A, III B, ...)
+                exists_general = db.query(Alumno).filter(Alumno.ciclo == ciclo_base).first()
+                exists_sectioned = db.query(Alumno).filter(Alumno.ciclo.like(f"{ciclo_base} %")).first()
+                if not exists_general and exists_sectioned:
+                    skipped.append({"row": total, "dni": dni, "email": email, "reason": f"Ciclo general '{ciclo_base}' inexistente; especifique sección"})
+                    continue
+                ciclo_final = ciclo_base
+            else:
+                # Número + sección → validar sección: una sola letra A-Z y no numerales romanos típicos
+                if not re.fullmatch(r"[A-Z]", seccion):
+                    skipped.append({"row": total, "dni": dni, "email": email, "reason": "Sección inválida; use una sola letra A-Z"})
+                    continue
+                if seccion in {"I", "V", "X"}:
+                    skipped.append({"row": total, "dni": dni, "email": email, "reason": "Sección inválida; no usar numerales romanos como sección"})
+                    continue
+                ciclo_final = f"{ciclo_base} {seccion}"
 
             # Evitar duplicados por DNI o email
             if db.query(Alumno).filter(Alumno.dni == dni).first():

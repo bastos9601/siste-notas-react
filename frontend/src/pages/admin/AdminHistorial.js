@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { adminService } from '../../services/adminService';
-import { Search, BookOpen, FileText, Trash2, X } from 'lucide-react';
+import { Search, BookOpen, FileText, Trash2, X, ChevronDown, ChevronUp } from 'lucide-react';
 import AdminHistorialAcademico from './AdminHistorialAcademico';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -15,6 +15,10 @@ const AdminHistorial = () => {
   const [showHistorialModal, setShowHistorialModal] = useState(false);
   const [selectedCiclo, setSelectedCiclo] = useState(null);
   const [config, setConfig] = useState(null);
+  const [years, setYears] = useState([]);
+  const [selectedYear, setSelectedYear] = useState(null);
+  const [registrosAnio, setRegistrosAnio] = useState([]);
+  const [showYearList, setShowYearList] = useState(false);
 
   useEffect(() => {
     const fetchAlumnos = async () => {
@@ -45,12 +49,45 @@ const AdminHistorial = () => {
     fetchConfig();
   }, []);
 
+  // Cargar años disponibles (vista por año)
+  useEffect(() => {
+    const fetchYears = async () => {
+      try {
+        const resp = await adminService.getHistorialYears();
+        setYears(resp?.years || []);
+      } catch (error) {
+        console.error('Error al cargar años de historial:', error);
+      }
+    };
+    fetchYears();
+  }, []);
+
+  // Cuando se selecciona un año, cargar los historiales de ese año
+  useEffect(() => {
+    const fetchPorAnio = async () => {
+      if (!selectedYear) return;
+      try {
+        setLoading(true);
+        const resp = await adminService.getHistorialPorAnio(selectedYear);
+        const registros = (resp?.records || []).filter(r => !String(r.ciclo || '').includes('Ciclo Anterior'));
+        setRegistrosAnio(registros);
+        setSelectedCiclo(null);
+        setSearchTerm('');
+      } catch (error) {
+        console.error('Error al cargar historiales por año:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchPorAnio();
+  }, [selectedYear]);
+
   const handleSearch = (e) => {
     setSearchTerm(e.target.value);
   };
 
-  // Ciclos únicos con contador de alumnos por ciclo
-  const ciclosConContadores = alumnos.reduce((acc, alumno) => {
+  // Contadores por ciclo
+  const ciclosConContadoresAlumnos = alumnos.reduce((acc, alumno) => {
     const ciclo = alumno.ciclo;
     if (!ciclo) return acc;
     if (!acc[ciclo]) acc[ciclo] = 0;
@@ -58,7 +95,15 @@ const AdminHistorial = () => {
     return acc;
   }, {});
 
-  const ciclos = Object.keys(ciclosConContadores).sort();
+  const ciclosConContadoresAnio = registrosAnio.reduce((acc, r) => {
+    const ciclo = r.ciclo;
+    if (!ciclo) return acc;
+    if (!acc[ciclo]) acc[ciclo] = 0;
+    acc[ciclo]++;
+    return acc;
+  }, {});
+
+  const ciclos = Object.keys(selectedYear ? ciclosConContadoresAnio : ciclosConContadoresAlumnos).sort();
 
   const filteredAlumnos = alumnos.filter(alumno => {
     const matchesSearch =
@@ -69,6 +114,19 @@ const AdminHistorial = () => {
     return matchesSearch && matchesCiclo;
   });
 
+  const filteredRegistros = registrosAnio.filter(r => {
+    const matchesSearch =
+      String(r.alumno_nombre || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+      String(r.dni || '').includes(searchTerm) ||
+      String(r.ciclo || '').includes(searchTerm);
+    const matchesCiclo = selectedCiclo ? r.ciclo === selectedCiclo : true;
+    return matchesSearch && matchesCiclo;
+  });
+
+  const itemsParaTabla = selectedYear
+    ? filteredRegistros.map(r => ({ id: r.alumno_id, nombre_completo: r.alumno_nombre, dni: r.dni }))
+    : filteredAlumnos;
+
   const handleVerHistorial = (alumno) => {
     setSelectedAlumno(alumno);
     setShowHistorialModal(true);
@@ -78,21 +136,34 @@ const AdminHistorial = () => {
     try {
       const data = await adminService.getHistorialAcademicoAlumno(alumno.id);
 
-      // Filtrar entradas de "Ciclo Anterior" y formatear ciclo
-      const filtered = (data || []).filter(item => !String(item.ciclo || '').includes('Ciclo Anterior'));
-      const historial = filtered.map(item => ({
+      let historial = (data || []).filter(item => !String(item.ciclo || '').includes('Ciclo Anterior'));
+      // Si hay año/ciclo seleccionado, filtrar por ambos
+      if (selectedYear) {
+        historial = historial.filter(item => {
+          const year = (() => {
+            try {
+              const d = new Date(item.fecha_registro);
+              return isNaN(d.getTime()) ? String(item.fecha_registro).slice(0,4) : d.getFullYear();
+            } catch (_) {
+              return String(item.fecha_registro).slice(0,4);
+            }
+          })();
+          return String(year) === String(selectedYear) && (!selectedCiclo || item.ciclo === selectedCiclo);
+        });
+      }
+
+      historial = historial.map(item => ({
         ...item,
         ciclo: /^[IVX]+$/.test(String(item.ciclo)) ? `Ciclo: ${item.ciclo}` : item.ciclo
       }));
 
       if (!historial.length) {
-        alert('No hay historial académico para este alumno.');
+        alert('No hay historial académico para este alumno con el filtro aplicado.');
         return;
       }
 
       const doc = new jsPDF({ unit: 'pt', format: 'a4' });
 
-      // Preparar logo si hay URL en configuración
       let logoDataUrl = null;
       try {
         if (config?.logo_url) {
@@ -102,7 +173,10 @@ const AdminHistorial = () => {
         console.warn('No fue posible obtener el logo desde la URL:', e);
       }
 
-      const headerY = drawHeader(doc, { title: (config?.nombre_sistema || 'Sistema de Notas'), subtitle: 'Historial Académico', logoDataUrl });
+      const subtitle = selectedYear
+        ? `Historial Académico (${selectedYear}${selectedCiclo ? ` - Ciclo ${selectedCiclo}` : ''})`
+        : 'Historial Académico';
+      const headerY = drawHeader(doc, { title: (config?.nombre_sistema || 'Sistema de Notas'), subtitle, logoDataUrl });
       const nextY = drawInfoWithSeparator(doc, [
         `Alumno: ${alumno.nombre_completo || ''}`,
         ...(alumno.dni ? [`DNI: ${alumno.dni}`] : [])
@@ -152,12 +226,18 @@ const AdminHistorial = () => {
   };
 
   const handleEliminarHistorial = async (alumno) => {
-    const confirmado = window.confirm(`¿Eliminar el historial académico de "${alumno.nombre_completo}"? Esto no eliminará al alumno, solo su historial.`);
+    const confirmado = window.confirm(`¿Eliminar el historial académico de "${alumno.nombre_completo}"${selectedCiclo ? ` del ciclo ${selectedCiclo}` : ''}? Esto no eliminará al alumno, solo su historial.`);
     if (!confirmado) return;
     try {
-      await adminService.deleteHistorialAcademicoAlumno(alumno.id);
+      await adminService.deleteHistorialAcademicoAlumno(alumno.id, selectedYear ? selectedCiclo : null);
       if (showHistorialModal && selectedAlumno?.id === alumno.id) {
         setShowHistorialModal(false);
+      }
+      // Refrescar la lista si estamos en vista por año
+      if (selectedYear) {
+        const resp = await adminService.getHistorialPorAnio(selectedYear);
+        const registros = (resp?.records || []).filter(r => !String(r.ciclo || '').includes('Ciclo Anterior'));
+        setRegistrosAnio(registros);
       }
       alert('Historial académico eliminado correctamente.');
     } catch (error) {
@@ -172,66 +252,151 @@ const AdminHistorial = () => {
         <h1 className="text-2xl font-bold text-gray-900">Historial Académico</h1>
       </div>
 
-      {/* Selector de ciclos */}
-      {!selectedCiclo ? (
+      {/* Selector de años */}
+      {!selectedYear ? (
         <div>
-          <p className="text-gray-600 mb-3">Selecciona un ciclo para ver los alumnos y su historial académico.</p>
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-            {ciclos.map((ciclo) => (
+          <p className="text-gray-600 mb-3">Selecciona un año para ver los ciclos y alumnos.</p>
+          <div className="flex items-center justify-between mb-3">
+            <div className="relative inline-block">
               <button
-                key={ciclo}
-                className="bg-white border border-gray-200 rounded-lg p-4 text-left hover:shadow transition-shadow"
-                onClick={() => { setSelectedCiclo(ciclo); setSearchTerm(''); }}
-                title={`Ver alumnos del Ciclo ${ciclo}`}
+                className="inline-flex items-center px-3 py-2 bg-primary-600 text-white rounded hover:bg-primary-700"
+                onClick={() => setShowYearList(prev => !prev)}
               >
-                <div className="text-xs text-gray-500">Ciclo</div>
-                <div className="text-xl font-semibold text-gray-900">{ciclo}</div>
-                <div className="text-xs text-gray-500">{ciclosConContadores[ciclo]} alumnos</div>
+                {showYearList ? <ChevronUp className="h-4 w-4 mr-2" /> : <ChevronDown className="h-4 w-4 mr-2" />}
+                Seleccionar año
               </button>
-            ))}
+              {showYearList && (
+                <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-10 min-w-max">
+                  <div className="p-2">
+                    {years.length === 0 ? (
+                      <div className="text-sm text-gray-500 px-2 py-1">No hay años disponibles.</div>
+                    ) : (
+                      years.map((year) => (
+                        <button
+                          key={year}
+                          className="block w-full text-left py-2 px-3 hover:bg-gray-50 rounded whitespace-nowrap"
+                          onClick={() => { setSelectedYear(year); setSelectedCiclo(null); setSearchTerm(''); setShowYearList(false); }}
+                          title={`Ver historiales del año ${year}`}
+                        >
+                          {year}
+                        </button>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       ) : (
         <>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-2">
-              <span className="text-gray-600">Ciclo seleccionado:</span>
-              <span className="px-2 py-1 bg-blue-100 text-blue-700 rounded text-sm">{selectedCiclo}</span>
+          {/* Selector de ciclos (por año) */}
+          {!selectedCiclo ? (
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center space-x-2">
+                  <span className="text-gray-600">Año seleccionado:</span>
+                  <span className="px-2 py-1 bg-green-100 text-green-700 rounded text-sm">{selectedYear}</span>
+                </div>
+                <div className="flex items-center space-x-3">
+                  <div className="relative inline-block">
+                    <button
+                      className="inline-flex items-center px-3 py-1.5 bg-primary-600 text-white rounded hover:bg-primary-700"
+                      onClick={() => setShowYearList(prev => !prev)}
+                    >
+                      {showYearList ? <ChevronUp className="h-4 w-4 mr-2" /> : <ChevronDown className="h-4 w-4 mr-2" />}
+                      {`Seleccionar año: ${selectedYear}`}
+                    </button>
+                    {showYearList && (
+                      <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-10 min-w-max">
+                        <div className="p-2">
+                          {years.length === 0 ? (
+                            <div className="text-sm text-gray-500 px-2 py-1">No hay años disponibles.</div>
+                          ) : (
+                            years.map((year) => (
+                              <button
+                                key={year}
+                                className="block w-full text-left py-2 px-3 hover:bg-gray-50 rounded whitespace-nowrap"
+                                onClick={() => { setSelectedYear(year); setSelectedCiclo(null); setSearchTerm(''); setShowYearList(false); }}
+                                title={`Ver historiales del año ${year}`}
+                              >
+                                {year}
+                              </button>
+                            ))
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  <button
+                    className="text-blue-600 hover:text-blue-800"
+                    onClick={() => { setSelectedYear(null); setSelectedCiclo(null); setSearchTerm(''); setShowYearList(false); }}
+                  >
+                    Ver todos los años
+                  </button>
+                </div>
+              </div>
+              <p className="text-gray-600 mb-3">Selecciona un ciclo del año {selectedYear}.</p>
+              <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                {ciclos.map((ciclo) => (
+                  <button
+                    key={ciclo}
+                    className="bg-white border border-gray-200 rounded-lg p-4 text-left hover:shadow transition-shadow"
+                    onClick={() => { setSelectedCiclo(ciclo); setSearchTerm(''); }}
+                    title={`Ver alumnos del Ciclo ${ciclo} en ${selectedYear}`}
+                  >
+                    <div className="text-xs text-gray-500">Ciclo</div>
+                    <div className="text-xl font-semibold text-gray-900">{ciclo}</div>
+                    <div className="text-xs text-gray-500">{(selectedYear ? ciclosConContadoresAnio[ciclo] : ciclosConContadoresAlumnos[ciclo])} alumnos</div>
+                  </button>
+                ))}
+              </div>
             </div>
-            <button
-              className="text-blue-600 hover:text-blue-800"
-              onClick={() => { setSelectedCiclo(null); setSearchTerm(''); }}
-            >
-              Ver todos los ciclos
-            </button>
-          </div>
+          ) : (
+            <>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <span className="text-gray-600">Año:</span>
+                  <span className="px-2 py-1 bg-green-100 text-green-700 rounded text-sm">{selectedYear}</span>
+                  <span className="text-gray-600 ml-3">Ciclo:</span>
+                  <span className="px-2 py-1 bg-blue-100 text-blue-700 rounded text-sm">{selectedCiclo}</span>
+                </div>
+                <button
+                  className="text-blue-600 hover:text-blue-800"
+                  onClick={() => { setSelectedCiclo(null); setSearchTerm(''); }}
+                >
+                  Ver ciclos del año
+                </button>
+              </div>
 
-          {/* Buscador */}
-          <div className="relative mt-4">
-            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-              <Search className="h-5 w-5 text-gray-400" />
-            </div>
-            <input
-              type="text"
-              placeholder="Buscar por nombre, DNI..."
-              className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg w-full focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-              value={searchTerm}
-              onChange={handleSearch}
-            />
-          </div>
+              {/* Buscador */}
+              <div className="relative mt-4">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <Search className="h-5 w-5 text-gray-400" />
+                </div>
+                <input
+                  type="text"
+                  placeholder="Buscar por nombre, DNI..."
+                  className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg w-full focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                  value={searchTerm}
+                  onChange={handleSearch}
+                />
+              </div>
+            </>
+          )}
         </>
       )}
 
-      {/* Lista de alumnos por ciclo: solo mostrar cuando hay ciclo seleccionado */}
-      {selectedCiclo && (
+      {/* Lista de alumnos filtrada */}
+      {selectedYear && selectedCiclo && (
         <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
           {loading ? (
             <div className="flex justify-center items-center h-40">
               <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-primary-500"></div>
             </div>
-          ) : filteredAlumnos.length === 0 ? (
+          ) : itemsParaTabla.length === 0 ? (
             <div className="text-center py-10">
-              <p className="text-gray-500">No hay alumnos en el Ciclo {selectedCiclo}{searchTerm ? ' que coincidan con la búsqueda' : ''}.</p>
+              <p className="text-gray-500">No hay alumnos en el Ciclo {selectedCiclo} del año {selectedYear}{searchTerm ? ' que coincidan con la búsqueda' : ''}.</p>
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -250,7 +415,7 @@ const AdminHistorial = () => {
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {filteredAlumnos.map((alumno) => (
+                  {itemsParaTabla.map((alumno) => (
                     <tr key={alumno.id} className="hover:bg-gray-50">
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                         {alumno.nombre_completo}
@@ -260,26 +425,18 @@ const AdminHistorial = () => {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                         <div className="flex items-center space-x-4">
-                          {/* <button
-                            onClick={() => handleVerHistorial(alumno)}
-                            className="text-blue-600 hover:text-blue-900 flex items-center"
-                            title="Ver historial académico"
-                          >
-                            <BookOpen className="h-4 w-4 mr-1" />
-                            Ver historial
-                          </button> */}
                           <button
                             onClick={() => handleVerPdf(alumno)}
                             className="text-rose-600 hover:text-rose-800 flex items-center"
                             title="Ver historial en PDF"
                           >
                             <FileText className="h-4 w-4 mr-1" />
-                            Ver 
+                            Ver
                           </button>
                           <button
                             onClick={() => handleEliminarHistorial(alumno)}
                             className="text-red-600 hover:text-red-800 flex items-center"
-                            title="Eliminar historial académico"
+                            title="Eliminar historial académico del ciclo"
                           >
                             <Trash2 className="h-4 w-4 mr-1" />
                             Eliminar

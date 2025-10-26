@@ -292,3 +292,36 @@ def delete_historial_academico(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error al eliminar historial académico: {str(e)}"
         )
+
+# Nuevo: listar años disponibles en historiales (solo admin)
+@router.get("/years")
+def get_historial_years(
+    db: Session = Depends(get_db),
+    current_user = Depends(require_role("admin"))
+):
+    years_rows = db.query(func.strftime('%Y', HistorialAcademico.fecha_registro)).distinct().order_by(func.strftime('%Y', HistorialAcademico.fecha_registro).desc()).all()
+    years = [int(r[0]) for r in years_rows if r[0] is not None]
+    return {"years": years}
+
+# Nuevo: obtener historiales por año, con datos de alumno y ciclo (solo admin)
+@router.get("/por-anio/{year}")
+def get_historial_por_anio(
+    year: int,
+    db: Session = Depends(get_db),
+    current_user = Depends(require_role("admin"))
+):
+    q = db.query(HistorialAcademico, Alumno).join(Alumno, HistorialAcademico.alumno_id == Alumno.id).filter(
+        func.strftime('%Y', HistorialAcademico.fecha_registro) == str(year)
+    )
+    rows = q.all()
+    records = []
+    for h, alumno in rows:
+        records.append({
+            "historial_id": h.id,
+            "alumno_id": alumno.id,
+            "alumno_nombre": alumno.nombre_completo,
+            "dni": alumno.dni,
+            "ciclo": h.ciclo,
+            "fecha_registro": str(h.fecha_registro) if h.fecha_registro else None,
+        })
+    return {"year": year, "records": records}

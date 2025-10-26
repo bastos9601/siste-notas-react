@@ -50,6 +50,7 @@ function App() {
                   <AdminAlumnos />
                 </ProtectedRoute>
               } />
+              
               <Route path="admin/docentes" element={
                 <ProtectedRoute allowedRoles={['admin']}>
                   <AdminDocentes />
@@ -79,7 +80,7 @@ function App() {
                 <ProtectedRoute allowedRoles={['admin']}>
                   <AdminConfiguracion />
                 </ProtectedRoute>
-              } />
+              } />|
               <Route path="admin/perfil" element={
                 <ProtectedRoute allowedRoles={['admin']}>
                   <AdminPerfil />

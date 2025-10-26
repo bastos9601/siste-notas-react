@@ -1,12 +1,21 @@
 import React, { useState, useEffect } from 'react';
 import { TrendingUp, Award, BookOpen, BarChart3 } from 'lucide-react';
 import { alumnoService } from '../../services/alumnoService';
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import api from '../../services/api';
+import { drawHeader, drawInfoWithSeparator, autoTableTheme, drawFooter, fetchImageDataUrl } from '../../utils/pdfStyle';
 
 const AlumnoPromedios = () => {
   const [promedioGeneral, setPromedioGeneral] = useState(null);
   const [promediosPorAsignatura, setPromediosPorAsignatura] = useState([]);
   const [notas, setNotas] = useState([]);
   const [loading, setLoading] = useState(true);
+  // Nuevo: perfil, config y visor PDF
+  const [perfil, setPerfil] = useState(null);
+  const [config, setConfig] = useState(null);
+  const [pdfUrl, setPdfUrl] = useState(null);
+  const [viewerOpen, setViewerOpen] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -14,15 +23,19 @@ const AlumnoPromedios = () => {
 
   const loadData = async () => {
     try {
-      const [promedioData, promediosAsignaturaData, notasData] = await Promise.all([
+      const [promedioData, promediosAsignaturaData, notasData, perfilData, configData] = await Promise.all([
         alumnoService.getMiPromedio(),
         alumnoService.getPromedioPorAsignatura(true), // Solo ciclo actual
-        alumnoService.getMisNotas(true) // Solo ciclo actual
+        alumnoService.getMisNotas(true), // Solo ciclo actual
+        alumnoService.getMiPerfil(),
+        api.get('/configuracion').then(r => r.data).catch(() => null)
       ]);
       
       setPromedioGeneral(promedioData);
       setPromediosPorAsignatura(promediosAsignaturaData);
       setNotas(notasData);
+      setPerfil(perfilData);
+      setConfig(configData);
     } catch (error) {
       console.error('Error al cargar datos:', error);
     } finally {
@@ -32,14 +45,94 @@ const AlumnoPromedios = () => {
 
   const handleDescargarPromediosPDF = async () => {
     try {
-      const response = await alumnoService.descargarPromediosPorAsignaturaPDF(true);
-      const blob = new Blob([response.data], { type: 'application/pdf' });
-      const url = window.URL.createObjectURL(blob);
-      const viewer = window.open(url, '_blank');
-      if (viewer) viewer.focus();
+      const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+
+      let logoDataUrl = null;
+      try {
+        if (config?.logo_url) {
+          logoDataUrl = await fetchImageDataUrl(config.logo_url);
+        }
+      } catch (e) {
+        console.warn('No fue posible obtener el logo desde la URL:', e);
+      }
+
+      const titulo = config?.nombre_sistema || 'Sistema de Notas';
+      const subtitulo = 'Reporte: Promedios por Asignatura';
+      const headerY = drawHeader(doc, { title: titulo, subtitle: subtitulo, logoDataUrl });
+
+      const infoLines = [
+        `Alumno: ${perfil?.nombre_completo || '-'}`,
+        perfil?.ciclo ? `Ciclo: ${perfil.ciclo}` : null,
+        `Fecha: ${new Date().toLocaleString()}`
+      ].filter(Boolean);
+      const nextY = drawInfoWithSeparator(doc, infoLines, headerY + 6);
+
+      const head = [[
+        'Asignatura',
+        'Total Notas',
+        'Promedio',
+        'Nota Máxima',
+        'Nota Mínima'
+      ]];
+
+      const body = (promediosPorAsignatura || []).map(p => [
+        p.asignatura_nombre || '-',
+        typeof p.total_notas === 'number' ? p.total_notas : String(p.total_notas || '-'),
+        typeof p.promedio === 'number' ? Number(p.promedio).toFixed(2) : String(p.promedio || '-'),
+        typeof p.nota_maxima === 'number' ? Number(p.nota_maxima).toFixed(2) : String(p.nota_maxima || '-'),
+        typeof p.nota_minima === 'number' ? Number(p.nota_minima).toFixed(2) : String(p.nota_minima || '-')
+      ]);
+
+      autoTable(doc, {
+        head,
+        body,
+        startY: nextY + 6,
+        margin: { left: 14, right: 14 },
+        ...autoTableTheme(),
+        columnStyles: {
+          0: { cellWidth: 70 },
+          1: { cellWidth: 28, halign: 'center' },
+          2: { cellWidth: 25, halign: 'right' },
+          3: { cellWidth: 25, halign: 'right' },
+          4: { cellWidth: 25, halign: 'right' }
+        },
+        didParseCell: (data) => {
+          if (data.section === 'body' && data.column.index === 2) {
+            const val = parseFloat(String(data.cell.raw).replace(',', '.'));
+            if (!isNaN(val)) {
+              if (val >= 18) data.cell.styles.textColor = [34, 197, 94]; // verde
+              else if (val >= 14) data.cell.styles.textColor = [37, 99, 235]; // azul
+              else if (val >= 11) data.cell.styles.textColor = [234, 179, 8]; // amarillo
+              else data.cell.styles.textColor = [239, 68, 68]; // rojo
+            }
+          }
+        },
+        didDrawPage: drawFooter(doc)
+      });
+
+      const finalY = doc.lastAutoTable ? doc.lastAutoTable.finalY : nextY + 6;
+      const total = (promediosPorAsignatura || []).length;
+      doc.setFontSize(11);
+      doc.setTextColor(33, 33, 33);
+      doc.text(`Total asignaturas: ${total}`, 14, finalY + 8);
+
+      const safeAlumno = (perfil?.nombre_completo || 'alumno').replace(/\s+/g, '_');
+      const timestamp = new Date().toISOString().slice(0, 19).replace(/[-:T]/g, '');
+      const fileName = `Promedios_${safeAlumno}_${timestamp}.pdf`;
+
+      const blob = doc.output('blob');
+      const url = URL.createObjectURL(blob);
+      setPdfUrl(url);
+      setViewerOpen(true);
+
+      // Fallback: si el visor falla, abrir en nueva pestaña
+      const win = window.open(url, '_blank');
+      if (!win) {
+        doc.save(fileName);
+      }
     } catch (error) {
       console.error('Error al visualizar el PDF de promedios:', error);
-      alert('No se pudo visualizar el PDF de promedios. Inténtalo más tarde.');
+      alert('No se pudo generar y visualizar el PDF de promedios. Inténtalo más tarde.');
     }
   };
 
@@ -142,6 +235,48 @@ const AlumnoPromedios = () => {
 
   return (
     <div className="space-y-6">
+      {/* Visor PDF modal */}
+      {viewerOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-lg w-full max-w-5xl">
+            <div className="flex items-center justify-between p-4 border-b">
+              <div className="flex items-center gap-2">
+                <BarChart3 className="h-5 w-5 text-blue-600" />
+                <span className="font-semibold">Vista previa PDF — Promedios por Asignatura</span>
+              </div>
+              <div className="flex items-center space-x-2">
+                {pdfUrl && (
+                  <a
+                    href={pdfUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                  >Abrir en nueva pestaña</a>
+                )}
+                {pdfUrl && (
+                  <a
+                    href={pdfUrl}
+                    download={`Promedios_${(perfil?.nombre_completo || 'alumno').replace(/\s+/g, '_')}.pdf`}
+                    className="px-3 py-2 bg-green-600 text-white rounded hover:bg-green-700"
+                  >Descargar</a>
+                )}
+                <button
+                  onClick={() => { setViewerOpen(false); setPdfUrl(null); }}
+                  className="px-3 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300"
+                >Cerrar</button>
+              </div>
+            </div>
+            <div className="p-0">
+              {pdfUrl ? (
+                <iframe src={pdfUrl} title="Promedios PDF" className="w-full h-[75vh]" />
+              ) : (
+                <div className="p-6 text-center text-gray-500">Generando vista previa...</div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-bold text-gray-900">Mis Promedios</h1>

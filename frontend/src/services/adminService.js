@@ -1,4 +1,5 @@
 import api from './api';
+import * as XLSX from 'xlsx';
 
 export const adminService = {
   // Gestión de Alumnos
@@ -42,16 +43,64 @@ export const adminService = {
     return response.data;
   },
 
-  // Importación Excel de alumnos
+  // Importación Excel de alumnos (convertimos Excel -> CSV y reutilizamos el endpoint CSV)
   async importarAlumnosExcel(file) {
-    const formData = new FormData();
-    formData.append('file', file);
-    const response = await api.post('/admin/alumnos/import-excel', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' }
-    });
-    return response.data;
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+
+      // Heurística: elegir la hoja con mejores encabezados esperados
+      const normalize = (s) => {
+        if (!s) return '';
+        const t = String(s).normalize('NFKD').replace(/[\u0300-\u036f]/g, '');
+        return t.toLowerCase().replace(/[_.;:\-]+/g, ' ').replace(/\s+/g, ' ').trim();
+      };
+      const expected = [
+        ['dni', 'documento', 'numero documento', 'cedula'],
+        ['email', 'correo', 'correo electronico', 'mail', 'e mail'],
+        ['ciclo', 'semestre', 'nivel', 'periodo'],
+        ['nombre completo', 'nombres y apellidos', 'nombre y apellidos', 'alumno', 'estudiante']
+      ];
+      const scoreHeaders = (headerRow) => {
+        const normSet = new Set(headerRow.map((h) => normalize(h)));
+        let score = 0;
+        for (const group of expected) {
+          for (const cand of group) {
+            if (normSet.has(normalize(cand))) { score++; break; }
+          }
+        }
+        return score;
+      };
+
+      let bestSheetName = workbook.SheetNames[0];
+      let bestScore = -1;
+      for (const name of workbook.SheetNames) {
+        const sheet = workbook.Sheets[name];
+        const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, blankrows: false });
+        const header = rows[0] || [];
+        const s = scoreHeaders(Array.isArray(header) ? header : []);
+        if (s > bestScore) { bestScore = s; bestSheetName = name; }
+      }
+      const sheet = workbook.Sheets[bestSheetName];
+
+      // Convertir a CSV evitando filas en blanco
+      const csvText = XLSX.utils.sheet_to_csv(sheet, { FS: ',', RS: '\n', blankrows: false });
+
+      // Crear un File/Blob CSV para enviarlo al backend
+      const csvBlob = new Blob([csvText], { type: 'text/csv' });
+      const csvFile = new File([csvBlob], `${(file.name || 'import')}.csv`, { type: 'text/csv' });
+
+      return await adminService.importarAlumnosCSV(csvFile);
+    } catch (err) {
+      // Fallback: enviar excel al endpoint original si la conversión falla
+      const formData = new FormData();
+      formData.append('file', file);
+      const response = await api.post('/admin/alumnos/import-excel', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+      return response.data;
+    }
   },
-  
   // Registrar siguiente ciclo (no matricular, solo actualizar campo ciclo)
   async registrarSiguienteCicloAlumno(id) {
     const response = await api.post(`/admin/alumnos/${id}/registrar-siguiente-ciclo`);
@@ -158,6 +207,18 @@ export const adminService = {
   // Historial Académico
   async getHistorialAcademicoAlumno(alumnoId) {
     const response = await api.get(`/historial/alumnos/${alumnoId}/historial`);
+    return response.data;
+  },
+
+  // Nuevo: años disponibles de historiales
+  async getHistorialYears() {
+    const response = await api.get('/historial/years');
+    return response.data;
+  },
+
+  // Nuevo: historiales por año (resumen por alumno y ciclo)
+  async getHistorialPorAnio(year) {
+    const response = await api.get(`/historial/por-anio/${year}`);
     return response.data;
   },
   
