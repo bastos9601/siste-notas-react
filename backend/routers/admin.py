@@ -1032,7 +1032,7 @@ async def crear_asignatura(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(require_role("admin"))
 ):
-    """Crear nueva asignatura y matricular automáticamente a los alumnos del ciclo correspondiente"""
+    """Crear nueva asignatura sin matricular alumnos automáticamente"""
     # Verificar que el docente existe
     docente = db.query(Docente).filter(Docente.id == asignatura_data.docente_id).first()
     if not docente:
@@ -1055,36 +1055,6 @@ async def crear_asignatura(
     # Recargar con la relación del docente
     db_asignatura = db.query(Asignatura).options(joinedload(Asignatura.docente)).filter(Asignatura.id == db_asignatura.id).first()
     
-    # Matricular automáticamente a todos los alumnos del ciclo correspondiente
-    alumnos_ciclo = db.query(Alumno).filter(Alumno.ciclo == asignatura_data.ciclo).all()
-    matriculas_creadas = []
-    
-    for alumno in alumnos_ciclo:
-        # Verificar si ya está matriculado en esta asignatura
-        existing_matricula = db.execute(
-            matriculas.select().where(
-                matriculas.c.alumno_id == alumno.id,
-                matriculas.c.asignatura_id == db_asignatura.id
-            )
-        ).first()
-        
-        # Si no está matriculado, crear la matrícula
-        if not existing_matricula:
-            db.execute(
-                matriculas.insert().values(
-                    alumno_id=alumno.id,
-                    asignatura_id=db_asignatura.id
-                )
-            )
-            matriculas_creadas.append({
-                "alumno_id": alumno.id,
-                "alumno_nombre": alumno.nombre_completo,
-                "asignatura_id": db_asignatura.id
-            })
-    
-    # Confirmar los cambios en la base de datos
-    db.commit()
-    
     return {
         "asignatura": {
             "id": db_asignatura.id,
@@ -1098,11 +1068,7 @@ async def crear_asignatura(
                 "usuario_id": docente.usuario_id
             }
         },
-        "matriculas_automaticas": {
-            "total_alumnos_matriculados": len(matriculas_creadas),
-            "detalle": matriculas_creadas
-        },
-        "mensaje": f"Asignatura creada y {len(matriculas_creadas)} alumnos matriculados automáticamente"
+        "mensaje": "Asignatura creada"
     }
 
 @router.get("/asignaturas")

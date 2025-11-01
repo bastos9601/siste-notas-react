@@ -244,9 +244,18 @@ export const adminService = {
   async subirLogo(file) {
     const formData = new FormData();
     formData.append('archivo', file);
-    const response = await api.post('/admin/configuracion/logo/cloudinary', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' }
-    });
-    return response.data;
+    // Intentar subir a Cloudinary; si falla, hacer fallback a subida local
+    try {
+      const response = await api.post('/admin/configuracion/logo/cloudinary', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+      return response.data; // { url }
+    } catch (err) {
+      // Fallback: subir al servidor local
+      const responseLocal = await api.post('/admin/configuracion/logo', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+      return responseLocal.data; // { url }
+    }
   },
 };

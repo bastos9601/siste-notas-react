@@ -2,19 +2,41 @@ from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 import os
+import sys
 from dotenv import load_dotenv
 
 load_dotenv()
 
-# Configuración de la base de datos - usando la base de datos local en el backend
-# Usamos ruta absoluta para asegurar que siempre use la base de datos del directorio backend
+"""
+Configuración de base de datos portable:
+ - En modo empaquetado (PyInstaller), guarda la BD en `<dir_del_exe>/data/sistema_notas.db`.
+ - En modo desarrollo (python normal), usa `<repo>/backend/data/sistema_notas.db`.
+Esto asegura que copiar la carpeta del ejecutable sea suficiente para llevar los datos.
+"""
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-# BASE_DIR ahora apunta a core/, por lo que tomamos el directorio padre (backend)
 BACKEND_DIR = os.path.dirname(BASE_DIR)
-DB_PATH = os.path.join(BACKEND_DIR, "sistema_notas.db")
+
+# Detectar si estamos corriendo como ejecutable empaquetado
+if getattr(sys, "frozen", False):
+    app_dir = os.path.dirname(sys.executable)
+else:
+    # Directorio base del proyecto (padre de backend)
+    project_root = os.path.dirname(BACKEND_DIR)
+    app_dir = os.path.join(project_root, "backend")
+
+# Carpeta de datos persistentes junto al ejecutable o backend
+DATA_DIR = os.path.join(app_dir, "data")
+try:
+    os.makedirs(DATA_DIR, exist_ok=True)
+except Exception:
+    # Si no se puede crear, usar directorio actual como respaldo
+    DATA_DIR = os.path.join(os.getcwd(), "data")
+    os.makedirs(DATA_DIR, exist_ok=True)
+
+DB_PATH = os.path.join(DATA_DIR, "sistema_notas.db")
 print(f"Ruta de la base de datos: {DB_PATH}")
 
-# Forzar el uso de la base de datos del directorio backend
 DATABASE_URL = f"sqlite:///{DB_PATH}"
 
 engine = create_engine(

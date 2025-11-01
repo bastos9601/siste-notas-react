@@ -45,13 +45,14 @@ const AdminConfiguracion = () => {
       const { url } = await adminService.subirLogo(file);
       if (url) {
         setLogoUrl(url);
-        setMessage('Logo subido correctamente a Cloudinary.');
+        setMessage('Logo subido correctamente.');
       } else {
-        setError('No se pudo subir el logo a Cloudinary.');
+        setError('No se pudo subir el logo.');
       }
     } catch (e) {
       console.error('Error subiendo el logo:', e);
-      setError('Ocurrió un error al subir el logo.');
+      const detail = e?.response?.data?.detail || e?.message || '';
+      setError(`Ocurrió un error al subir el logo${detail ? `: ${detail}` : ''}.`);
     } finally {
       setUploading(false);
     }
@@ -137,7 +138,7 @@ const AdminConfiguracion = () => {
                 className="block text-sm"
               />
               <p className="text-xs text-gray-500 mt-1">
-                {'El archivo se sube a Cloudinary y se guarda solo el URL.'}
+                El archivo se sube al almacenamiento configurado (Cloudinary o servidor).
               </p>
             </div>
           </div>

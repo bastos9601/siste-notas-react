@@ -9,12 +9,24 @@ from core.database import engine, Base, get_db, SessionLocal
 from models import Usuario
 from sqlalchemy.orm import Session
 import os
+import sys
+from starlette.responses import FileResponse
 
-# Asegurar que estamos en el  directorio correcto
+"""
+Establecer directorios y CWD de forma portable:
+ - En ejecutable: usar el directorio del .exe como CWD.
+ - En desarrollo: usar el directorio `backend/` como CWD.
+"""
 backend_dir = os.path.dirname(os.path.abspath(__file__))
-os.chdir(backend_dir)
+if getattr(sys, "frozen", False):
+    app_dir = os.path.dirname(sys.executable)
+else:
+    app_dir = backend_dir
+try:
+    os.chdir(app_dir)
+except Exception:
+    pass
 print(f"Directorio de trabajo actual: {os.getcwd()}")
-print(f"Usando la base de datos en: {os.path.join(backend_dir, 'sistema_notas.db')}")
 
 # Crear las tablas
 Base.metadata.create_all(bind=engine)
@@ -72,11 +84,28 @@ app.add_middleware(
 )
 
 # Servir archivos estáticos para logos subidos localmente
-uploads_root = os.path.join(backend_dir, "uploads")
+uploads_root = os.path.join(app_dir, "uploads")
 os.makedirs(os.path.join(uploads_root, "logos"), exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=uploads_root), name="uploads")
 
-# Incluir routers
+"""
+Servir frontend React (build) de forma portable.
+ - En ejecutable: buscar dentro de `_MEIPASS/frontend/build` si fue empaquetado con --add-data.
+ - En desarrollo: usar `../frontend/build` relativo al repo.
+ - Proveer ruta raíz y catch-all para SPA.
+"""
+def get_frontend_build_dir():
+    # PyInstaller: archivos empaquetados se extraen en sys._MEIPASS
+    if hasattr(sys, "_MEIPASS"):
+        candidate = os.path.join(sys._MEIPASS, "frontend", "build")
+        if os.path.exists(candidate):
+            return candidate
+    # Desarrollo: relativo al proyecto
+    project_root = os.path.dirname(backend_dir)
+    candidate = os.path.join(project_root, "frontend", "build")
+    return candidate
+
+# Incluir routers PRIMERO (antes del catch-all del frontend)
 app.include_router(auth.router, prefix="/auth", tags=["autenticación"])
 app.include_router(admin.router, prefix="/admin", tags=["administrador"])
 app.include_router(docente.router, prefix="/docente", tags=["docente"])
@@ -88,9 +117,31 @@ app.include_router(chatbot.router, prefix="", tags=["chatbot"])
 from routers import configuracion
 app.include_router(configuracion.router, prefix="", tags=["configuración"])
 
-@app.get("/")
-async def root():
-    return {"message": "Sistema de Gestión de Notas API"}
+# Configurar frontend DESPUÉS de los routers de API
+build_dir = get_frontend_build_dir()
+if os.path.exists(build_dir):
+    # Servir assets estáticos desde build/static
+    static_dir = os.path.join(build_dir, "static")
+    if os.path.exists(static_dir):
+        app.mount("/static", StaticFiles(directory=static_dir), name="static")
+
+    index_html = os.path.join(build_dir, "index.html")
+    @app.get("/")
+    async def serve_index():
+        return FileResponse(index_html)
+
+    @app.get("/{full_path:path}")
+    async def serve_spa(full_path: str):
+        # Catch-all para rutas del frontend (solo rutas que no sean de API)
+        if os.path.exists(index_html):
+            return FileResponse(index_html)
+        return {"detail": "Frontend no construido"}
+else:
+    print(f"Frontend build no encontrado en: {build_dir}. Sólo API disponible.")
+    
+    @app.get("/")
+    async def root():
+        return {"message": "Sistema de Gestión de Notas API"}
 
 
 @app.get("/debug/users")

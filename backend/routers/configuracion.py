@@ -6,6 +6,7 @@ from schemas import ConfiguracionSistema as ConfigSchema, ConfiguracionSistemaBa
 from core.auth import require_role
 import os
 import uuid
+import sys
 
 # Cloudinary
 from dotenv import load_dotenv
@@ -109,9 +110,14 @@ async def subir_logo(
     if not archivo.content_type or not archivo.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="El archivo debe ser una imagen.")
 
-    # Construir rutas de almacenamiento en backend/uploads/logos
+    # Construir rutas de almacenamiento en <app_dir>/uploads/logos
+    # En ejecutable (PyInstaller) se usa el directorio del .exe; en desarrollo, backend/
     backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    uploads_dir = os.path.join(backend_dir, "uploads", "logos")
+    if getattr(sys, "frozen", False):
+        app_dir = os.path.dirname(sys.executable)
+    else:
+        app_dir = backend_dir
+    uploads_dir = os.path.join(app_dir, "uploads", "logos")
     os.makedirs(uploads_dir, exist_ok=True)
 
     # Generar nombre único
