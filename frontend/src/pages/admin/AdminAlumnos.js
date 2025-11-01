@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Plus, Edit, Trash2, Search, Send, Calendar, Eye, BookOpen } from 'lucide-react';
 import { adminService } from '../../services/adminService';
 import AdminHistorialAcademico from './AdminHistorialAcademico';
+import DownloadTemplateButton from '../../components/DownloadTemplateButton';
 
 const AdminAlumnos = () => {
   const [alumnos, setAlumnos] = useState([]);
@@ -585,6 +586,23 @@ ${response.instructions}
                 <p className="text-sm text-gray-600">
                   Formato esperado de columnas: <strong>nombre_completo,dni,ciclo,email</strong> [<em>password</em>] [<em>seccion</em>]
                 </p>
+                
+                {/* Botón para descargar plantilla */}
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium text-blue-900">¿Necesitas una plantilla?</p>
+                      <p className="text-xs text-blue-700">Descarga el archivo de ejemplo con el formato correcto</p>
+                    </div>
+                    <DownloadTemplateButton 
+                      fileName="Template.xlsx"
+                      buttonText="Descargar Plantilla"
+                      variant="primary"
+                      className="ml-3"
+                    />
+                  </div>
+                </div>
+
                 <input
                   type="file"
                   accept=".csv,.xlsx,.xls"
