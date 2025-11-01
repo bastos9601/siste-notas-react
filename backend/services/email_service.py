@@ -921,7 +921,14 @@ async def send_report_with_attachment(email: str, nombre_docente: str, asignatur
 
 
 async def send_report_with_attachment_bytes(email: str, nombre_docente: str, asignatura: str, tipo_evaluacion: str, filename: str, file_bytes: bytes, mime_type: str = "application/pdf"):
-    # Plantilla HTML igual que la usada en el envío con ruta
+    """Enviar el reporte adjuntando bytes en memoria usando SMTP nativo.
+
+    Este enfoque evita el uso de fastapi-mail para adjuntos,
+    que es incompatible con Pydantic v2 y genera errores como
+    'ValidationInfo ... has no attribute multipart_subtype'.
+    """
+
+    # Plantilla HTML del correo
     html_content = f"""
     <!DOCTYPE html>
     <html>
@@ -972,7 +979,7 @@ async def send_report_with_attachment_bytes(email: str, nombre_docente: str, asi
         <div class=\"content\">
             <p>Hola,</p>
             <p>El docente <strong>{nombre_docente}</strong> ha compartido el reporte de la asignatura <strong>{asignatura}</strong> correspondiente a <strong>{tipo_evaluacion}</strong>.</p>
-            <div class=\"info-box\">El archivo PDF del reporte se adjunta a este correo.</div>
+            <div class=\"info-box\">El archivo del reporte se adjunta a este correo.</div>
             <p>Saludos,<br>Sistema de Gestión de Notas</p>
         </div>
         <div class=\"footer\">
@@ -982,73 +989,28 @@ async def send_report_with_attachment_bytes(email: str, nombre_docente: str, asi
     </html>
     """
 
-    # Construir UploadFile con bytes en memoria
     try:
-        upload = UploadFile(filename=filename, file=BytesIO(file_bytes))
-        message = MessageSchema(
-            subject=f"Reporte de Notas - {asignatura} ({tipo_evaluacion})",
-            recipients=[email],  # FORZAR envío solo al destinatario ingresado
-            body=html_content,
-            subtype="html",
-            attachments=[upload],
-        )
-    except Exception as e:
-        # Si falla la creación de UploadFile (compatibilidad), usar adjunto por ruta
-        backend_dir = os.path.dirname(os.path.abspath(__file__))
-        tmp_dir = os.path.join(backend_dir, "reports", "tmp")
-        os.makedirs(tmp_dir, exist_ok=True)
-        tmp_path = os.path.join(tmp_dir, filename)
-        with open(tmp_path, "wb") as f:
-            f.write(file_bytes)
-        message = MessageSchema(
-            subject=f"Reporte de Notas - {asignatura} ({tipo_evaluacion})",
-            recipients=[email],  # FORZAR envío solo al destinatario ingresado
-            body=html_content,
-            subtype="html",
-            attachments=[tmp_path],
-        )
+        # Construir correo con HTML y adjunto
+        msg = EmailMessage()
+        msg["Subject"] = f"Reporte de Notas - {asignatura} ({tipo_evaluacion})"
+        msg["From"] = MAIL_FROM
+        msg["To"] = email
+        msg.set_content("Adjuntamos el reporte de notas.")
+        msg.add_alternative(html_content, subtype="html")
 
-    try:
-        await FastMail(conf).send_message(message)
-        return {"success": True, "message": f"Reporte enviado exitosamente a {email}"}
-    except Exception as e1:
-        # Fallback: guardar temporalmente y adjuntar por ruta
+        # Adjuntar bytes con el tipo MIME indicado
         try:
-            backend_dir = os.path.dirname(os.path.abspath(__file__))
-            tmp_dir = os.path.join(backend_dir, "reports", "tmp")
-            os.makedirs(tmp_dir, exist_ok=True)
-            tmp_path = os.path.join(tmp_dir, filename)
-            with open(tmp_path, "wb") as f:
-                f.write(file_bytes)
-            message = MessageSchema(
-                subject=f"Reporte de Notas - {asignatura} ({tipo_evaluacion})",
-                recipients=[email],  # FORZAR envío solo al destinatario ingresado
-                body=html_content,
-                subtype="html",
-                attachments=[tmp_path],
-            )
-            await FastMail(conf).send_message(message)
-            try:
-                os.remove(tmp_path)
-            except Exception:
-                pass
-            return {"success": True, "message": f"Reporte enviado exitosamente a {email}"}
-        except Exception as e2:
-            # Fallback 1: guardar temporalmente y adjuntar por ruta
-            try:
-                msg = EmailMessage()
-                msg["Subject"] = f"Reporte de Notas - {asignatura} ({tipo_evaluacion})"
-                msg["From"] = MAIL_FROM
-                msg["To"] = email
-                msg.set_content("Adjuntamos el reporte de notas en PDF.")
-                msg.add_alternative(html_content, subtype="html")
-                msg.add_attachment(file_bytes, maintype="application", subtype="pdf", filename=filename)
+            maintype, subtype = mime_type.split("/", 1)
+        except Exception:
+            maintype, subtype = "application", "octet-stream"
+        msg.add_attachment(file_bytes, maintype=maintype, subtype=subtype, filename=filename)
 
-                with smtplib.SMTP("smtp.gmail.com", 587) as smtp:
-                    smtp.starttls()
-                    smtp.login(MAIL_USERNAME, MAIL_PASSWORD)
-                    smtp.send_message(msg)
+        # Enviar por SMTP
+        with smtplib.SMTP("smtp.gmail.com", 587) as smtp:
+            smtp.starttls()
+            smtp.login(MAIL_USERNAME, MAIL_PASSWORD)
+            smtp.send_message(msg)
 
-                return {"success": True, "message": f"Reporte enviado exitosamente a {email} (SMTP)"}
-            except Exception as e3:
-                return {"success": False, "message": f"Error al enviar reporte: {str(e1)} | Fallback ruta: {str(e2)} | SMTP: {str(e3)}"}
+        return {"success": True, "message": f"Reporte enviado exitosamente a {email}"}
+    except Exception as e:
+        return {"success": False, "message": f"Error al enviar reporte: {str(e)}"}

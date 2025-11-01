@@ -19,6 +19,10 @@ const AdminHistorial = () => {
   const [selectedYear, setSelectedYear] = useState(null);
   const [registrosAnio, setRegistrosAnio] = useState([]);
   const [showYearList, setShowYearList] = useState(false);
+  // Nuevo: visor PDF local para previsualización
+  const [pdfUrl, setPdfUrl] = useState(null);
+  const [viewerOpen, setViewerOpen] = useState(false);
+  const [viewerAlumno, setViewerAlumno] = useState(null);
 
   useEffect(() => {
     const fetchAlumnos = async () => {
@@ -162,7 +166,7 @@ const AdminHistorial = () => {
         return;
       }
 
-      const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+      const doc = new jsPDF({ unit: 'mm', format: 'a4' });
 
       let logoDataUrl = null;
       try {
@@ -176,18 +180,19 @@ const AdminHistorial = () => {
       const subtitle = selectedYear
         ? `Historial Académico (${selectedYear}${selectedCiclo ? ` - Ciclo ${selectedCiclo}` : ''})`
         : 'Historial Académico';
-      const headerY = drawHeader(doc, { title: (config?.nombre_sistema || 'Sistema de Notas'), subtitle, logoDataUrl });
+      const headerY = drawHeader(doc, { title: (config?.nombre_sistema || 'Sistema de Notas').toUpperCase(), subtitle, logoDataUrl });
       const nextY = drawInfoWithSeparator(doc, [
         `Alumno: ${alumno.nombre_completo || ''}`,
         ...(alumno.dni ? [`DNI: ${alumno.dni}`] : [])
       ], headerY + 6);
 
-      const marginLeft = 40;
-      let y = nextY + 12;
+      const marginLeft = 25 ;
+      let y = nextY + 8;
       historial.forEach((ciclo) => {
-        doc.setFontSize(12);
+        doc.setFontSize(11);
+        doc.setTextColor(33, 33, 33);
         doc.text(String(ciclo.ciclo), marginLeft, y);
-        y += 10;
+        y += 6;
 
         const rows = (ciclo.asignaturas || []).map(a => {
           const valor = a.promedio !== undefined && a.promedio !== null
@@ -204,18 +209,25 @@ const AdminHistorial = () => {
           startY: y,
           head: [['Asignatura', 'Nota', 'Estado']],
           body: rows,
-          ...autoTableTheme(),
-          styles: { fontSize: 10, cellPadding: 4 },
           margin: { left: marginLeft, right: marginLeft },
+          ...autoTableTheme(),
+          styles: { fontSize: 10, cellPadding: 3 },
+          columnStyles: {
+            0: { cellWidth: 100 },
+            1: { cellWidth: 25, halign: 'center' },
+            2: { cellWidth: 35, halign: 'center' },
+          },
           didDrawPage: drawFooter(doc)
         });
-        y = doc.lastAutoTable.finalY + 18;
+        y = (doc.lastAutoTable ? doc.lastAutoTable.finalY : y) + 12;
       });
 
       try {
-        const blobUrl = doc.output('bloburl');
-        const win = window.open(blobUrl, '_blank');
-        if (!win) doc.save(`${alumno.nombre_completo || 'historial'}_historial.pdf`);
+        const blob = doc.output('blob');
+        const url = URL.createObjectURL(blob);
+        setPdfUrl(url);
+        setViewerAlumno(alumno);
+        setViewerOpen(true);
       } catch (e) {
         doc.save(`${alumno.nombre_completo || 'historial'}_historial.pdf`);
       }
@@ -248,6 +260,57 @@ const AdminHistorial = () => {
 
   return (
     <div className="space-y-6">
+      {viewerOpen && (
+        <div className="fixed inset-0 z-50 bg-black bg-opacity-40 flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-5xl overflow-hidden">
+            <div className="flex items-center justify-between p-4 border-b">
+              <div>
+                <h3 className="text-lg font-semibold">Historial Académico{selectedYear ? ` — ${selectedYear}${selectedCiclo ? ` • Ciclo ${selectedCiclo}` : ''}` : ''}</h3>
+                <p className="text-sm text-gray-500">
+                  Alumno: {viewerAlumno?.nombre_completo || '-'}{viewerAlumno?.dni ? ` • DNI: ${viewerAlumno.dni}` : ''}
+                </p>
+              </div>
+              <div className="flex items-center space-x-2">
+                {pdfUrl && (
+                  <a
+                    href={pdfUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                    title="Abrir en nueva pestaña"
+                  >
+                    Abrir en nueva pestaña
+                  </a>
+                )}
+                {pdfUrl && (
+                  <a
+                    href={pdfUrl}
+                    download={`Historial_${(viewerAlumno?.nombre_completo || 'alumno').replace(/\s+/g, '_')}${selectedYear ? `_${selectedYear}` : ''}${selectedCiclo ? `_Ciclo_${selectedCiclo}` : ''}.pdf`}
+                    className="px-3 py-2 bg-green-600 text-white rounded hover:bg-green-700"
+                    title="Descargar PDF"
+                  >
+                    Descargar
+                  </a>
+                )}
+                <button
+                  onClick={() => { if (pdfUrl) URL.revokeObjectURL(pdfUrl); setViewerOpen(false); setPdfUrl(null); setViewerAlumno(null); }}
+                  className="px-3 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300"
+                  title="Cerrar visor"
+                >
+                  Cerrar
+                </button>
+              </div>
+            </div>
+            <div className="p-0">
+              {pdfUrl ? (
+                <iframe src={pdfUrl} title="Historial PDF" className="w-full h-[75vh]" />
+              ) : (
+                <div className="p-6 text-center text-gray-500">Generando vista previa...</div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-900">Historial Académico</h1>
       </div>

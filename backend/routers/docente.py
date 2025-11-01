@@ -1030,55 +1030,201 @@ async def enviar_reporte_email(
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = f"reporte_{docente.id}_{asignatura}_{tipo_eval}_{timestamp}.pdf"
 
-    # Generar PDF con los datos del reporte en memoria
+    # Generar PDF con los datos del reporte en memoria (diseño nuevo)
     try:
         styles = getSampleStyleSheet()
-        story = []
 
-        # Encabezado unificado
+        # Estilos de texto
+        info_style = ParagraphStyle('InfoLeft', parent=styles['Normal'], alignment=TA_LEFT)
+        title_style = ParagraphStyle('TitleCentered', parent=styles['Title'], alignment=TA_CENTER)
+        cell_left = ParagraphStyle('CellLeft', parent=styles['Normal'], fontSize=10, leading=12, alignment=TA_LEFT)
+        cell_center = ParagraphStyle('CellCenter', parent=styles['Normal'], fontSize=10, leading=12, alignment=TA_CENTER)
+
+        # Configuración del sistema (logo y nombre)
         from models import ConfiguracionSistema
         config = db.query(ConfiguracionSistema).first()
-        titulo_bar = (config.nombre_sistema if config and config.nombre_sistema else "Sistema de Notas")
-        subtitulo_bar = f"Reporte: {payload.get('tipo_evaluacion', tipo_eval)} - {payload.get('asignatura', asignatura)}"
-        story.append(build_header(titulo_bar, subtitulo_bar, logo_url=(config.logo_url if config else None)))
-        story.append(Spacer(1, 4))
+        system_name = (getattr(config, "nombre_sistema", None) or "SISTEMA DE NOTAS")
+        logo_url = getattr(config, "logo_url", None)
 
-        # Estilos personalizados para centrado y encabezado informativo alineado a la izquierda
-        title_style = ParagraphStyle('TitleCentered', parent=styles['Title'], alignment=TA_CENTER)
-        info_style = ParagraphStyle('InfoLeft', parent=styles['Normal'], alignment=TA_LEFT)
+        # Altura de barra azul (px/pt) y márgenes
+        BLUE_HEIGHT = 100     # barra azul con altura de 100
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(
+            buffer,
+            pagesize=letter,
+            leftMargin=36,
+            rightMargin=36,
+            topMargin=BLUE_HEIGHT + 36,   # empuja el contenido bajo la barra
+            bottomMargin=36,
+        )
 
-        # Información del encabezado
+        # Callback que dibuja la barra azul y el logo en cada página
+        def _draw_header(canvas, _doc):
+            from reportlab.lib.utils import ImageReader
+            import urllib.request as _url
+            import io as _io
+            import os as _os
+
+            canvas.saveState()
+            page_width, page_height = _doc.pagesize
+
+            # Barra azul a todo lo ancho
+            canvas.setFillColor(colors.HexColor('#2563EB'))
+            canvas.rect(0, page_height - BLUE_HEIGHT, page_width, BLUE_HEIGHT, stroke=0, fill=1)
+
+            # Título y subtítulo dentro de la barra
+            canvas.setFillColor(colors.white)
+            canvas.setFont("Helvetica-Bold", 18)
+            canvas.drawString(36, page_height - 35, str(system_name))
+            canvas.setFont("Helvetica", 11)
+            subtitulo = f"Reporte: {payload.get('tipo_evaluacion', tipo_eval)} - {payload.get('asignatura', asignatura)}"
+            canvas.drawString(36, page_height - 55, subtitulo)
+
+            # Logo a la derecha - análisis profundo y debug
+            try:
+                if logo_url:
+                    print(f"DEBUG PDF: logo_url recibido = '{logo_url}' (tipo: {type(logo_url)})")
+                    img_reader = None
+                    logo_loaded = False
+                    
+                    # Caso 1: URL completa (http/https)
+                    if str(logo_url).startswith(("http://", "https://")):
+                        print(f"DEBUG PDF: Intentando cargar desde URL: {logo_url}")
+                        try:
+                            with _url.urlopen(logo_url, timeout=10) as resp:
+                                img_bytes = resp.read()
+                                print(f"DEBUG PDF: Descargados {len(img_bytes)} bytes desde URL")
+                            img_reader = ImageReader(_io.BytesIO(img_bytes))
+                            logo_loaded = True
+                            print("DEBUG PDF: Logo cargado exitosamente desde URL")
+                        except Exception as e:
+                            print(f"DEBUG PDF: Error cargando logo desde URL: {e}")
+                    
+                    # Caso 2: Ruta absoluta de archivo
+                    elif _os.path.isabs(str(logo_url)) and _os.path.isfile(str(logo_url)):
+                        print(f"DEBUG PDF: Intentando cargar desde ruta absoluta: {logo_url}")
+                        try:
+                            img_reader = ImageReader(str(logo_url))
+                            logo_loaded = True
+                            print("DEBUG PDF: Logo cargado exitosamente desde ruta absoluta")
+                        except Exception as e:
+                            print(f"DEBUG PDF: Error cargando logo desde ruta absoluta: {e}")
+                    
+                    # Caso 3: URL relativa del servidor (ej: /uploads/logos/archivo.png)
+                    elif str(logo_url).startswith("/uploads/"):
+                        backend_dir = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
+                        # Remover el /uploads/ del inicio y construir ruta completa
+                        relative_path = str(logo_url).lstrip("/uploads/")
+                        logo_path = _os.path.join(backend_dir, "uploads", relative_path)
+                        print(f"DEBUG PDF: Intentando cargar desde uploads (URL relativa): {logo_path}")
+                        if _os.path.isfile(logo_path):
+                            try:
+                                img_reader = ImageReader(logo_path)
+                                logo_loaded = True
+                                print("DEBUG PDF: Logo cargado exitosamente desde uploads (URL relativa)")
+                            except Exception as e:
+                                print(f"DEBUG PDF: Error cargando logo desde uploads (URL relativa): {e}")
+                        else:
+                            print(f"DEBUG PDF: Archivo no encontrado en: {logo_path}")
+                    
+                    # Caso 4: Solo nombre de archivo (buscar en uploads/logos)
+                    else:
+                        backend_dir = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
+                        logo_path = _os.path.join(backend_dir, "uploads", "logos", str(logo_url))
+                        print(f"DEBUG PDF: Intentando cargar desde uploads/logos: {logo_path}")
+                        if _os.path.isfile(logo_path):
+                            try:
+                                img_reader = ImageReader(logo_path)
+                                logo_loaded = True
+                                print("DEBUG PDF: Logo cargado exitosamente desde uploads/logos")
+                            except Exception as e:
+                                print(f"DEBUG PDF: Error cargando logo desde uploads/logos: {e}")
+                        else:
+                            print(f"DEBUG PDF: Archivo no encontrado en: {logo_path}")
+                    
+                    # Dibujar el logo si se cargó correctamente
+                    if img_reader and logo_loaded:
+                        logo_w, logo_h = 80, 60  # Tamaño ajustado para altura 100
+                        canvas.drawImage(
+                            img_reader,
+                            page_width - logo_w - 15,
+                            page_height - logo_h - 20,
+                            width=logo_w,
+                            height=logo_h,
+                            preserveAspectRatio=True,
+                            mask='auto',
+                        )
+                        print("DEBUG PDF: Logo dibujado exitosamente en el canvas")
+                    else:
+                        print("DEBUG PDF: No se pudo cargar el logo desde ninguna fuente")
+                else:
+                    print("DEBUG PDF: logo_url es None o vacío")
+            except Exception as e:
+                print(f"DEBUG PDF: Error general cargando logo: {e}")
+                import traceback
+                print(f"DEBUG PDF: Traceback completo: {traceback.format_exc()}")
+                # Si falla la carga del logo, continuar sin bloquear el reporte
+                pass
+
+            canvas.restoreState()
+
+        # Contenido del documento
+        story = []
+
+        # Bloque de información bajo la barra (alineado a la izquierda)
         story.append(Paragraph(f"Docente: {docente.nombre_completo}", info_style))
         story.append(Paragraph(f"Asignatura: {payload.get('asignatura', asignatura)}", info_style))
         story.append(Paragraph(f"Tipo evaluación: {payload.get('tipo_evaluacion', tipo_eval)}", info_style))
-        story.append(Paragraph(f"Fecha envío: {datetime.now().strftime('%d/%m/%Y %H:%M')}", info_style))
+        story.append(Paragraph(f"Fecha envío: {datetime.now().strftime('%d/%m/%Y %I:%M %p')}", info_style))
         story.append(build_separator())
-        story.append(Spacer(1, 6))
+        story.append(Spacer(1, 10))
+
+        # Título del reporte
         titulo = f"Reporte de Notas - {payload.get('asignatura', asignatura)} ({payload.get('tipo_evaluacion', tipo_eval)})"
         story.append(Paragraph(titulo, title_style))
-        story.append(Spacer(1, 12))
+        story.append(Spacer(1, 14))
 
-        # Encabezados y filas
+        # Encabezados y filas con celdas de párrafo (para evitar desbordes)
         encabezados = ["Alumno", "Ciclo", "Asignatura", "Tipo Evaluación", "Calificación"]
         filas = []
         for fila in payload.get("reporte", []):
             filas.append([
-                str(fila.get("alumno", "")),
-                str(fila.get("ciclo", "")),
-                str(fila.get("asignatura", payload.get("asignatura", asignatura))),
-                str(fila.get("tipo_evaluacion", payload.get("tipo_evaluacion", tipo_eval))),
-                str(fila.get("calificacion", "")),
+                Paragraph(str(fila.get("alumno", "")), cell_left),
+                Paragraph(str(fila.get("ciclo", "")), cell_center),
+                Paragraph(str(fila.get("asignatura", payload.get("asignatura", asignatura))), cell_left),
+                Paragraph(str(fila.get("tipo_evaluacion", payload.get("tipo_evaluacion", tipo_eval))), cell_center),
+                Paragraph(str(fila.get("calificacion", "")), cell_center),
             ])
 
-        data = [encabezados] + (filas if filas else [["-","-","-","-","-"]])
-        table = Table(data, repeatRows=1)
+        data = [encabezados] + (filas if filas else [[Paragraph("-", cell_center)]*5])
+
+        # Ancho útil del documento y columnas proporcionadas
+        w = doc.width
+        table = Table(
+            data,
+            colWidths=[w * 0.32, w * 0.10, w * 0.26, w * 0.20, w * 0.12],
+            repeatRows=1
+        )
+
+        # Estilos de tabla (cabecera azul, grid, fondo alterno) + alineaciones finas
         apply_table_style(table)
+        table.setStyle(TableStyle([
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('ALIGN', (0, 1), (0, -1), 'LEFT'),       # Alumno
+            ('ALIGN', (2, 1), (2, -1), 'LEFT'),       # Asignatura
+            ('ALIGN', (1, 1), (4, -1), 'CENTER'),     # Ciclo, Tipo, Calificación
+            ('WORDWRAP', (0, 0), (-1, -1), True),
+        ]))
+
         story.append(table)
 
-        # Construir el PDF en memoria
-        buffer = io.BytesIO()
-        doc = SimpleDocTemplate(buffer, pagesize=letter)
-        doc.build(story)
+        # Total de alumnos
+        total_alumnos = len(filas)
+        story.append(Spacer(1, 12))
+        story.append(Paragraph(f"Total alumnos: {total_alumnos}", info_style))
+
+        # Construcción final del PDF con encabezado en cada página
+        doc.build(story, onFirstPage=_draw_header, onLaterPages=_draw_header)
         pdf_bytes = buffer.getvalue()
         buffer.close()
     except Exception as e:
@@ -1130,6 +1276,36 @@ async def enviar_reporte_email(
         "archivo": filename,
         "email": email,
         "fecha_envio": str(datetime.now())
+    }
+
+@router.get("/debug/logo-config")
+async def debug_logo_config(
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_role("docente"))
+):
+    """Endpoint temporal para debuggear la configuración del logo"""
+    import os
+    from models import ConfiguracionSistema
+    
+    config = db.query(ConfiguracionSistema).first()
+    backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    uploads_dir = os.path.join(backend_dir, "uploads", "logos")
+    
+    # Listar archivos en uploads/logos
+    logos_files = []
+    if os.path.exists(uploads_dir):
+        logos_files = os.listdir(uploads_dir)
+    
+    return {
+        "config_exists": config is not None,
+        "logo_url": getattr(config, "logo_url", None) if config else None,
+        "logo_url_type": type(getattr(config, "logo_url", None)).__name__ if config else None,
+        "backend_dir": backend_dir,
+        "uploads_logos_dir": uploads_dir,
+        "uploads_logos_exists": os.path.exists(uploads_dir),
+        "logos_files": logos_files,
+        "current_working_dir": os.getcwd(),
+        "system_name": getattr(config, "nombre_sistema", None) if config else None
     }
 
 @router.get("/asignatura/{asignatura_id}/promedios", response_model=List[Dict[str, Any]])
