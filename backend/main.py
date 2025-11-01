@@ -125,6 +125,11 @@ if os.path.exists(build_dir):
     if os.path.exists(static_dir):
         app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
+    # Servir plantillas desde build/templates si existen
+    templates_dir = os.path.join(build_dir, "templates")
+    if os.path.exists(templates_dir):
+        app.mount("/templates", StaticFiles(directory=templates_dir), name="templates")
+
     index_html = os.path.join(build_dir, "index.html")
     @app.get("/")
     async def serve_index():
