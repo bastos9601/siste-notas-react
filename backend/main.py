@@ -4,8 +4,8 @@ from fastapi.staticfiles import StaticFiles
 from routers import auth, admin, docente, alumno, historial
 # Añadir import del nuevo router de chatbot
 from routers import chatbot
-from core.auth import require_role  # para dependencias de rol en rutas directas
-from core.database import engine, Base, get_db
+from core.auth import require_role, get_password_hash  # para dependencias de rol y hash de contraseñas
+from core.database import engine, Base, get_db, SessionLocal
 from models import Usuario
 from sqlalchemy.orm import Session
 import os
@@ -18,6 +18,30 @@ print(f"Usando la base de datos en: {os.path.join(backend_dir, 'sistema_notas.db
 
 # Crear las tablas
 Base.metadata.create_all(bind=engine)
+
+# Crear usuario admin por defecto si no existe
+try:
+    db = SessionLocal()
+    try:
+        default_email = "admin@gmail.com"
+        existing_admin = db.query(Usuario).filter(Usuario.email == default_email).first()
+        if not existing_admin:
+            admin_user = Usuario(
+                nombre="Admin",
+                email=default_email,
+                password_hash=get_password_hash("admin123"),
+                rol="admin",
+                activo=True
+            )
+            db.add(admin_user)
+            db.commit()
+            print("Creado usuario admin por defecto: admin@gmail.com / admin123")
+        else:
+            print("Usuario admin por defecto ya existe: admin@gmail.com")
+    finally:
+        db.close()
+except Exception as e:
+    print(f"Error creando admin por defecto: {e}")
 
 # Asegurar columna modo_oscuro en configuracion_sistema (SQLite)
 try:
