@@ -2,6 +2,7 @@ from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from routers import auth, admin, docente, alumno, historial
+from fastapi.responses import FileResponse
 # Añadir import del nuevo router de chatbot
 from routers import chatbot
 from core.auth import require_role, get_password_hash  # para dependencias de rol y hash de contraseñas
@@ -9,6 +10,7 @@ from core.database import engine, Base, get_db, SessionLocal
 from models import Usuario
 from sqlalchemy.orm import Session
 import os
+
 
 # Asegurar que estamos en el  directorio correcto
 backend_dir = os.path.dirname(os.path.abspath(__file__))
@@ -60,6 +62,14 @@ app = FastAPI(
     description="API para gestión académica de notas con roles de Admin, Docente y Alumno",
     version="1.0.0"
 )
+# Configura los orígenes permitidos
+# origins = [
+
+#     "http://localhost:3000",   # React (modo dev)
+#     "http://127.0.0.1:3000",
+#     "http://localhost:8000",   # Si sirves el frontend desde FastAPI
+#     "http://127.0.0.1:8000",
+# ]
 
 # Configurar CORS
 # En la configuración CORS (líneas 20-25):
@@ -88,9 +98,11 @@ app.include_router(chatbot.router, prefix="", tags=["chatbot"])
 from routers import configuracion
 app.include_router(configuracion.router, prefix="", tags=["configuración"])
 
+
+
 @app.get("/")
 async def root():
-    return {"message": "Sistema de Gestión de Notas API"}
+    return {"message": "API del Sistema de Gestión de Notas está en funcionamiento."}
 
 
 @app.get("/debug/users")
@@ -199,6 +211,23 @@ async def enviar_reporte_email_direct(
     """
     from routers.docente import enviar_reporte_email as enviar
     return await enviar(payload, db, current_user)
+
+# # SERVIR DESDE EL FRONTEND
+# frontend_path = os.path.join(os.path.dirname(__file__), "frontend_build")
+# app.mount("/", StaticFiles(directory=frontend_path), name="frontend")
+
+
+    # """
+    # Devuelve el index.html para cualquier ruta que no sea /api o /auth,
+    # esto permite que React maneje sus propias rutas.
+    # """
+    # file_path = os.path.join(frontend_path, "index.html")
+    # if os.path.exists(file_path):
+    #     return FileResponse(file_path)
+    # else:
+    #     return {"detail": "Frontend no encontrado"}
+
+
 
 if __name__ == "__main__":
     import uvicorn

@@ -71,6 +71,8 @@ async def read_users_me(current_user: Usuario = Depends(get_current_user)):
     """Obtener información del usuario actual"""
     return current_user
 
+
+
 @router.post("/recuperar-contrasena")
 async def recuperar_contrasena(
     email_data: dict,
